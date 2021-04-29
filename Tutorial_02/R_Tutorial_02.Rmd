@@ -1,0 +1,534 @@
+---
+title: "R Tutorial 02"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+library(gmodels)
+library(epiR)
+library(DescTools)
+knitr::opts_chunk$set(echo = FALSE)
+# shiny::addResourcePath('tt2', here::here("/Tutorial_02"))
+dat_url <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/canine_dat_wide.csv")
+canine_data <- tibble(read.csv(text = dat_url))
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- More on creating and checking variables
+- Creating 2 x 2 tables from raw and summary data
+- Computing joint, conditional, and marginal probabilities from 2 x 2 tables 
+- Computing measures of association and their confidence intervals  
+
+In subsequent sections, we will be using the data from:
+
+Kline, Jeffrey A. (2019), Data from: Controlled clinical trial of canine therapy versus usual care to reduce patient anxiety in the emergency department, Dryad, Dataset, https://doi.org/10.5061/dryad.9pv5625
+
+This is the data set that we considered in Lecture 02.
+
+Recall that Kline et al. conducted a study of 80 patients in an emergency department (ED) in Indiana to assess the effect of canine therapy on patient anxiety.  Patients had their anxiety scores (higher means more anxious) measured at ED entry and were subsequently randomized to either canine therapy or standard care.  After 30 minutes of either canine therapy or standard care, patients had their anxiety scores measured again.  The outcome of interest is whether a patient's anxiety score decreased by 50\% or more.  If their score decreased by 50\% or more, the patient was considered a responder.  Otherwise, they were considered a non-responder.  
+
+You can assume that the data set has been saved as a tibble in R called ```canine_data```.  
+
+## 2 Creating & Checking Variables
+
+The tibble object, ```canine_data```, contains the two variables corresponding to patient anxiety score at baseline, ```pt_anx_t0``` and patient anxiety score after 30 minutes, ```pt_anx_t1```.
+
+Use the ```summary()``` function to examine the distributions of the ```pt_anx_t0``` and ```pt_anx_t1``` variables.
+
+```{r ptanxsum, exercise = TRUE, exercise.lines = 4}
+
+```
+
+```{r ptanxsum-solution}
+summary(canine_data$pt_anx_t0)
+summary(canine_data$pt_anx_t1)
+  
+```
+
+There is no variable in the data set that indicates whether a patient's anxiety score decreased by 50\% or more.  We have to create it.  We can do this using the ```mutate()``` and ```case_when()``` functions.  
+
+We will call our new variable ```pt_anx_resp```.  This variable will take on the value "responder" when a patient shows a 50% or greater decrease in anxiety score from baseline to 30 minutes or "non-responder" otherwise.  The code below shows how to create the ```pt_anx_resp``` variable and add it to the ```canine_data``` tibble.
+
+```{r createresp, exercise = TRUE, exercise.lines = 6}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"))
+
+```
+
+In Line 3, we are computing the change in anxiety score (```pt_anx_t1``` - ```pt_anx_t0```) and dividing that by the baseline score (```pt_anx_t0```) then telling R to check if this value is less than or equal to (```<=```) -0.5 (50% reduction).  If it is, then we tell R that it should assign the value of "responder" to ```pt_anx_resp```.  Similarly, in Line 4 we check if the change is greater than a 50% reduction and if it is, we assign the value of "non-responder" to ```pt_anx_resp```.  Recall that the ```mutate()``` and ```case_when()``` only recognize the ```pt_anx_t1``` and ```pt_anx_t0``` variables since we piped the ```canine_data``` tibble containing those variables into these functions.  
+
+Use the ```table()``` function in the code chunk above to count how many subjects are responders and how many are non-responders.
+
+```{r createresp-solution}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"))
+
+table(canine_data$pt_anx_resp)  
+```
+
+Use the ```class()``` function below to check the class of the newly created ```pt_anx_resp``` variable.
+
+```{r prepare-respsetup}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"))
+
+```
+
+```{r pt_anx_resp, exercise = TRUE, exercise.setup = "prepare-respsetup", exercise.lines = 3}
+
+```
+
+```{r pt_anx_resp-solution}
+class(canine_data$pt_anx_resp)
+```
+
+Notice that ```pt_anx_resp``` is a __character__ variable.  This is the default variable class created by the ```case_when()``` function when the outcome levels are specified by character strings surrounded by quotation marks.  However, when a variable has a fixed and known set of possible values, like ```pt_anx_resp``` does, it is good practice to convert it to a variable of the __factor__ class.  
+
+Another benefit of converting a __character__ variable to a __factor__ variable is that you can specify which level you want to designate as the __reference level__.  The __reference level__ of a categorical variable is the level against which all other levels are compared.  For a binary categorical variable, the reference level is typically the outcome level corresponding to "failure" (rather than "success").  For example, in the newly created ```pt_anx_resp``` variable, the outcome that corresponds to "failure" is "non-responder."  We should make this the reference level.  To do this, all we have to do is put "non-responder" before "responder" when we specify the levels in the ```factor()``` function.  Whichever level is stated first, is taken to be the reference level.  Coding the variable this way is good practice and will be important when we start to discuss modeling in a few weeks.  
+
+Add a line of code to in the ```mutate()``` function after the creation of the ```pt_anx_resp``` variable that converts it to a __factor__ variable with reference level = "non-responder".  Use the same name for the factor variable (i.e., overwrite the ```pt_anx_resp``` created by ```case_when()``` with the factor version of itself).
+
+```{r createresp2, exercise = TRUE, exercise.lines = 6}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"))
+
+```
+
+```{r createresp2-solution}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"), # don't forget the comma
+         pt_anx_resp = factor(pt_anx_resp, levels = c("non-responder", "responder")))
+
+```
+
+Whenever you create new variables from existing ones, it is a good idea to do a "sanity check" by printing out a few observations of the variables involved to make sure that the newly created variable actually represents what you think it does. We can do this by piping the ```canine_data``` tibble through the ```select()``` and ```print()``` functions.
+
+The arguments of the ```select()``` function are the names of the variables that you want to select.  The argument for the ```print()``` function is ```n```, which corresponds to the number of observations that you wish to print.  
+
+In the code below, we select the ```pt_anx_t0```, ```pt_anx_t1```, and ```pt_anx_resp``` variables from the ```canine_data``` tibble and print 10 observations.  Run the code and check that the ```pt_anx_resp``` variable has been created correctly.     
+
+```{r createrespcheck, exercise = TRUE, exercise.setup = "prepare-respsetup", exercise.lines = 6}
+canine_data %>%
+  select(pt_anx_t0, pt_anx_t1, pt_anx_resp) %>% 
+  print(n = 10)
+
+```
+
+In the next section we will be using the ```group``` variable from the ```canine_data``` tibble object.  In the code chunk below, check the class of the ```group``` variable.  If it is not already a factor variable, make it one with "No Dog" as the reference level.
+
+```{r groupcheck, exercise = TRUE, exercise.setup = "prepare-respsetup", exercise.lines = 3}
+
+```
+
+```{r groupcheck-solution}
+class(canine_data$group) 
+
+canine_data <- 
+  canine_data %>% 
+  mutate(group = factor(group, levels = c("No Dog", "Dog")))
+```
+
+## 3 Creating Table Objects
+
+```{r prepare-createresp2}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"), # don't forget the comma
+         pt_anx_resp = factor(pt_anx_resp, levels = c("non-responder", "responder")),
+         group = factor(group, levels = c("No Dog", "Dog")))
+
+```
+
+
+Here we will consider two ways to construct 2 x 2 table objects in R using the ```table()``` and ```matrix()``` functions.  The table objects that we create will be used to compute measures of association in the next section.       
+
+### Creating Tables Objects from Raw Data
+
+If you are working with data stored as a tibble (or data.frame) object, you can "pick off" the two variables that you wish to make a 2 x 2 table with and enter them into the ```table()``` function.  We have previously used the ```table()``` function to create simple tables based on one variable.  If you include two variables, separated by a comma in the ```table()``` function, you will create a table of frequencies for each combination of the levels of the two variables.  
+
+The code chunk below creates a 2 x 2 table using the ```pt_anx_resp``` and ```group``` variables.  Run the code chunk below to see the resulting table.  
+
+```{r tableraw1, exercise = TRUE, exercise.setup = "prepare-createresp2", exercise.lines = 4}
+# table arguments are:
+#  table(row variable, column variable)
+table(canine_data$group, canine_data$pt_anx_resp)
+```
+
+__The order in which you enter the variables into the__ ```table()``` __function matters!__
+
+The levels of the variable you enter as the __first argument__ will become the __rows__ of the table and the levels of the variable you enter as the __second argument__ will become the __columns__ of the table.
+
+Notice that the format of the table does not exactly match the format that we have seen in Lecture 02.  Exposure levels make up the rows and disease/response levels make up the columns, but we typically want to see the exposure of interest ("Dog") in the top row and the outcome of interest ("responder") in the first column.  The reason we see the opposite here is due to our reference level coding for both the ```pt_anx_resp``` and ```group``` variables that I told you to use in the previous section.  Don't be mad.  This is one instance where coding the reference level as I showed you in the last section is not helpful because the ```table()``` function automatically puts the reference level first (in both the rows and columns).  I assure you that there are many more instances where it will be helpful.  __Trust__.  Fortunately, there is an easy fix here.  
+
+We can simply change the order of the rows and the order of the columns using the following code:
+
+```{r switchord, exercise = TRUE, exercise.setup = "prepare-createresp2", exercise.lines = 4}
+table(canine_data$group, canine_data$pt_anx_resp)[c(2,1),c(2,1)]
+```
+
+<!-- We can use the ```relevel()``` function to switch the reference level for each variable.  The code chunk below shows how we can switch the ordering of the levels in the rows and columns.  We simply wrap each variable in the ```relevel()``` function and specify the new reference level using the "ref" argument.  Run the code below to see the updated table.    -->
+
+<!-- ```{r relevel1, exercise = TRUE, exercise.setup = "prepare-createresp2", exercise.lines = 4} -->
+<!-- table(relevel(canine_data$group, ref = "Dog"),  -->
+<!--       relevel(canine_data$pt_anx_resp, ref = "responder")) -->
+<!-- ``` -->
+
+Beautiful. The ``[c(2,1),c(2,1)]`` part of the code that we just added does the following: The first ``c(2,1)`` tells R to put the 2nd row first and the first row second.  The second ``c(2,1)`` tells R to put the 2nd column first and the first column second.    
+
+__For future analyses, we need to have the 2 x 2 table in EXACTLY THIS FORMAT: exposure levels in the rows with the first row corresponding to the exposure level of interest and disease/outcome levels in the columns with the first column corresponding to the disease/outcome level of interest.__  If you construct a table that does not have this format then you need to write code to make it so.  
+
+We will store this table as an object for use in subsequent analysis.  We can use the assignment operator (```<-```) to store this table as a named object.  We will use ```group_by_anx_tab``` as the name.  
+
+*Side Note: You can use (almost) any name you want for an R object.  There are some rules for naming objects in R: (1) names have to start with a letter or period, (2) names should contain only letters, numbers, periods, and/or underscores, (3) you should not use names that match built-in functions - for example ```sum()``` is a built-in function so don't ever call an object "sum".*
+
+Add a line of code to the chunk below to print out the table by typing in the name of the table and running the code.
+
+```{r switchord2, exercise = TRUE, exercise.setup = "prepare-createresp2", exercise.lines = 4}
+group_by_anx_tab <- table(canine_data$group, canine_data$pt_anx_resp)[c(2,1),c(2,1)]
+```
+
+```{r switchord2-solution}
+group_by_anx_tab <- table(canine_data$group, canine_data$pt_anx_resp)[c(2,1),c(2,1)]
+group_by_anx_tab
+```
+
+If you want, you can also apply labels to the row and column variables by adding the labels directly into the ``table()`` function.  For example, if we want to label the rows and columns of the ``group_by_anx_tab`` table object using the variable names, we can use the following code.  Run the code to see the labels applied.
+
+```{r labletab, exercise = TRUE, exercise.setup = "prepare-createresp2", exercise.lines = 4}
+group_by_anx_tab <- table(group = canine_data$group, pt_anx_resp = canine_data$pt_anx_resp)[c(2,1),c(2,1)]
+group_by_anx_tab
+```
+
+In the code chunk above, we used the actual variable names to label the rows and columns, but we could have used any labels that we want.  Here is code for providing alternative labels.  Run the code to see the alternative labels applied.
+
+```{r labletab2, exercise = TRUE, exercise.setup = "prepare-createresp2", exercise.lines = 4}
+group_by_anx_tab <- table(TREATMENT = canine_data$group, RESPONSE = canine_data$pt_anx_resp)[c(2,1),c(2,1)]
+group_by_anx_tab
+```
+### Creating Table Objects from Summary Data
+
+We may encounter contingency tables in journal articles or other media that we want to analyze in R.
+
+For example, consider the 2 x 2 table below from a hypothetical study. The rows correspond to the treatment received (Active or Placebo) and the columns correspond to the outcome (Alive or Dead).  
+
+|            | Alive | Dead |  
+|:----------:|:-----:|:----:|   
+| **Active** |145    | 64   |  
+| **Placebo**|107    | 122  |  
+
+We can enter this table directly into R using the code chunk below.  For comprehension of the code below, I'm going to label the cells:
+
+|            | Alive | Dead |  
+|:----------:|:-----:|:----:|   
+| **Active** |a = 145    |b = 64   |  
+| **Placebo**|c = 107    |d = 122  |
+
+```{r summarytab, exercise = TRUE, exercise.lines = 5}
+hypo_tab <- matrix(c(145, 64, 107, 122), nrow = 2, byrow = TRUE)
+colnames(hypo_tab) <- c("Alive", "Dead")
+rownames(hypo_tab) <- c("Active", "Placebo")
+hypo_tab <- as.table(hypo_tab)
+
+```
+
+```{r summarytab-solution}
+hypo_tab <- matrix(c(145, 64, 107, 122), nrow = 2, byrow = TRUE)
+colnames(hypo_tab) <- c("Alive", "Dead")
+rownames(hypo_tab) <- c("Active", "Placebo")
+hypo_tab <- as.table(hypo_tab)
+hypo_tab
+```
+
+Line 1 creates a **matrix** object called ```hypo_tab``` using the ```matrix()``` function.  The first argument of the ```matrix()``` function is ```c(145, 64, 107, 122)```, which is a vector of the cell frequencies.  We need to be sure to put them in the order a, b, c, d.  The second argument for the ```matrix()``` function is ```nrow = 2```.  This tells the function to make a matrix with 2 rows.  The second argument for the ```matrix()``` function is ```byrow = TRUE```.  This tells the function to fill the matrix in by row (rather than by column). If you only run Line 1 and print out the ```hypo_tab``` object you will see a matrix with 2 rows and 2 columns with the cell frequencies the correct cells.  
+
+Line 2 assigns column names to the ```hypo_tab``` matrix using the ```colnames()``` function.
+
+Line 3 assigns row names to the ```hypo_tab``` matrix using the ```rownames()``` function.
+
+Line 4 takes the appropriately labeled ```hypo_tab``` matrix and converts it to a table object.
+
+In the code chunk above print out the ```hypo_tab``` table object to confirm that it matches the table above.  
+
+## 4 2 x 2 Table Probabilities
+
+```{r prepare-measures}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"), # don't forget the comma
+         pt_anx_resp = factor(pt_anx_resp, levels = c("non-responder", "responder")),
+         group = factor(group, levels = c("No Dog", "Dog")))
+group_by_anx_tab <- table(relevel(canine_data$group, ref = "Dog"), 
+                          relevel(canine_data$pt_anx_resp, ref = "responder"))
+```
+
+Now that we know how to create table objects from raw data or summary data, we can easily compute joint, conditional, and marginal probabilities.  We can do this all at once using the ```CrossTable()``` function from the R package __gmodels__.  The only argument we need for the ```CrossTable()``` function is a table object.  Be sure to load the __gmodels__ using ```library(gmodels)``` before trying to use the ```CrossTable()``` function.  (You can assume that the package has been loaded in this tutorial.)
+
+For reference, here again is the 2 x 2 table for the dog therapy example (recall that this was stored as the table object, ```group_by_anx_tab``` in the previous section):
+
+```{r, echo = FALSE}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"), # don't forget the comma
+         pt_anx_resp = factor(pt_anx_resp, levels = c("non-responder", "responder")),
+         group = factor(group, levels = c("No Dog", "Dog")))
+group_by_anx_tab <- table(relevel(canine_data$group, ref = "Dog"), 
+                          relevel(canine_data$pt_anx_resp, ref = "responder"))
+group_by_anx_tab
+```
+
+Run the code chunk below to compute joint, conditional, and marginal probabilities for the 2 x 2 table.
+
+```{r jmc1, exercise = TRUE, exercise.setup = "prepare-measures", exercise.lines = 3}
+CrossTable(group_by_anx_tab)
+```
+
+Those of you familiar with SAS may recognize this output as being similar to output generated by proc freq.   
+
+The legend at the top left of the output tells us what the values correspond to in each cell.  
+
+The __first number__ in each cell is the frequency.  You can check that this matched the cell counts in the ```group_by_anx_tab``` table object.
+
+The __second number__ in each cell is the Chi-square contribution.  We will discuss this in the next tutorial.  
+
+The __third number__ in each cell is the probability of the column level conditional on the row level.  For example, in the $n_{11}$ cell, the value 0.525 corresponds to $\widehat{P}(responder | Dog)$.  You can check the calculation: 21/40 = 0.525.
+
+The __fourth number__ in each cell is the probability of the row level conditional on the column level.  For example, in the $n_{11}$ cell, the value 0.724 corresponds to $\widehat{P}(Dog | responder)$.  You can check the calculation: 21/29 = 0.724.
+
+The __fifth number__ in each cell is the joint probability of the row level and column level.  For example, in the $n_{11}$ cell, the value 0.263 corresponds to $\widehat{P}(responder \cap Dog )$.  You can check the calculation: 21/80 = 0.263.
+
+That the __marginal__ frequencies and probabilities are given in each row and column margin.  
+
+*Optional: Note that there are several other optional arguments for the ```CrossTable()``` function.  You can go to the help page for the function by typing ```?CrossTable()``` if you want to learn more.*
+
+
+## 5 Measures of Association and CIs
+```{r prepare-measures2}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"), # don't forget the comma
+         pt_anx_resp = factor(pt_anx_resp, levels = c("non-responder", "responder")),
+         group = factor(group, levels = c("No Dog", "Dog")))
+group_by_anx_tab <- table(relevel(canine_data$group, ref = "Dog"), 
+                          relevel(canine_data$pt_anx_resp, ref = "responder"))
+```
+
+We can easily compute sample risk differences, relative risks, and odds ratios as well as their corresponding confidence intervals in R.  We can do this all at once using the ```epi.2by2()``` function from the R package __epiR__.  The only arguments we will need for the ```epi.2by2()``` function are a table object and a confidence level.  Be sure to load the __epiR__ using ```library(epiR)``` before trying to use the ```epi.2by2()``` function.  (You can assume that the package has been loaded in this tutorial.)
+
+For reference, here again is the 2 x 2 table for the dog therapy example (recall that this was stored as the table object, ```group_by_anx_tab``` in a previous section):
+
+```{r, echo = FALSE}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_anx_resp = case_when((pt_anx_t1 - pt_anx_t0) / pt_anx_t0 <= -0.5 ~ "responder",
+                                 (pt_anx_t1 - pt_anx_t0) / pt_anx_t0 > -0.5 ~ "non-responder"), # don't forget the comma
+         pt_anx_resp = factor(pt_anx_resp, levels = c("non-responder", "responder")),
+         group = factor(group, levels = c("No Dog", "Dog")))
+group_by_anx_tab <- table(relevel(canine_data$group, ref = "Dog"), 
+                          relevel(canine_data$pt_anx_resp, ref = "responder"))
+group_by_anx_tab
+```
+
+Run the code chunk below to compute measures of association and their confidence intervals for the 2 x 2 table.  The first argument is our table object, ```group_by_anx_tab```.  The second argument, ```conf.level = 0.95```, specifies the confidence level for our confidence intervals.
+
+```{r moaci1, exercise = TRUE, exercise.setup = "prepare-measures", exercise.lines = 3}
+epi.2by2(group_by_anx_tab, conf.level = 0.95)
+```
+
+See Lecture 02 for the interpretation of the output generated by the code chunk above.
+
+There is an additional "method" argument that you may want to use.  This argument tells R what type of study design was used to generate your data.  This argument has four options, but we have only considered three: "cohort.count" (this is the default if you do not specify a method), "case.control", or "cross.sectional".  There isn't really a big difference between the output that gets presented when you specify different methods (at least not for the parts of the output that we are interested in), but you can see what happens when you change the method in the code chunk below.
+
+```{r moaci2, exercise = TRUE, exercise.setup = "prepare-measures", exercise.lines = 3}
+epi.2by2(group_by_anx_tab, conf.level = 0.95, method = "cohort.count")
+epi.2by2(group_by_anx_tab, conf.level = 0.95, method = "case.control")
+epi.2by2(group_by_anx_tab, conf.level = 0.95, method = "cross.sectional")
+```
+
+
+
+<!-- ## 6 Plots (Optional) -->
+
+<!-- ### Stacked Bar Plot -->
+
+<!-- ```{r stacked1, exercise = TRUE, exercise.setup = "prepare-measures", exercise.lines = 5, fig.height = 6, fig.width = 6} -->
+<!-- canine_data %>% -->
+<!--   count(pt_anx_resp, group) %>% -->
+<!--   ggplot(aes(x = group, y = n, fill = pt_anx_resp)) + -->
+<!--   geom_col()  -->
+<!-- ``` -->
+
+<!-- ```{r stacked2, exercise = TRUE, exercise.setup = "prepare-measures", exercise.lines = 11, fig.height = 6, fig.width = 6} -->
+<!-- canine_data %>% -->
+<!--   count(pt_anx_resp, group) %>% -->
+<!--   ggplot(aes(x = group, y = n, fill = pt_anx_resp)) + -->
+<!--   geom_col() + theme_classic() + -->
+<!--   theme(axis.title.x = element_text(size = 20), -->
+<!--         axis.title.y = element_text(size = 20), -->
+<!--         legend.position = "top") + -->
+<!--   xlab("Group") + ylab("Frequency") + -->
+<!--   scale_fill_discrete("Responder Status") -->
+<!-- ``` -->
+
+<!-- ### Grouped Bar Plot -->
+
+<!-- ```{r grouped1, exercise = TRUE, exercise.setup = "prepare-measures", exercise.lines = 5, fig.height = 6, fig.width = 6} -->
+<!-- canine_data %>% -->
+<!--   count(pt_anx_resp, group) %>% -->
+<!--   ggplot(aes(x = group, y = n, fill = pt_anx_resp)) + -->
+<!--   geom_col(position = "dodge")  -->
+<!-- ``` -->
+
+
+<!-- ```{r grouped2, exercise = TRUE, exercise.setup = "prepare-measures", exercise.lines = 5, fig.height = 6, fig.width = 6} -->
+<!-- canine_data %>% -->
+<!--   count(pt_anx_resp, group) %>% -->
+<!--   ggplot(aes(x = group, y = n, fill = pt_anx_resp)) + -->
+<!--   geom_col(position = "dodge") + theme_classic() + -->
+<!--   theme(axis.title.x = element_text(size = 20), -->
+<!--         axis.title.y = element_text(size = 20), -->
+<!--         legend.position = "top") + -->
+<!--   xlab("Group") + ylab("Frequency") + -->
+<!--   scale_fill_discrete("Responder Status") -->
+<!-- ``` -->
+
+<!-- ### Mosaic Plot -->
+
+<!-- One way to graphically represent a 2 x 2 table is with a __mosaic plot__.  A __mosaic plot__ . -->
+
+<!-- From https://cran.r-project.org/web/packages/DescTools/vignettes/TablesInR.pdf -->
+
+<!-- Such a plot will display the conditional frequencies in two directions. (Note that the important encoding is length.) -->
+
+
+<!-- ```{r plotmosaic, exercise = TRUE, exercise.setup = "prepare-measures", exercise.lines = 3, fig.height = 8, fig.width = 6} -->
+<!-- PlotMosaic(group_by_anx_tab) -->
+<!-- ``` -->
+
+<!-- ### Circle Plot -->
+
+<!-- Another way to graphically represent a 2 x 2 table is with a __circle plot__.  A __circle plot__ . -->
+
+<!-- ```{r plotcircle, exercise = TRUE, exercise.setup = "prepare-measures", exercise.lines = 3, fig.height = 6, fig.width = 6} -->
+<!-- PlotCirc(t(group_by_anx_tab)) -->
+<!-- ``` -->
+
+## More Practice
+
+The exercises below use the ``canine_data`` tibble discussed throughout this tutorial.  
+
+**Exercise 1.** In addition to measuring change in anxiety in the dog therapy study, the investigators also measured change in depression score (higher score means greater depressive symptoms).  Depression score at baseline is contained in the variable ``pt_dep_t0`` and depression score after therapy (either dog therapy or standard therapy) is contained in the variable ``pt_dep_t1``.  Create a new variable called ``pt_dep_resp`` (and store it in the ``canine_data`` tibble) that takes on the value of "depr_dec" if a patient's depression score decreased from baseline to post-treatment or takes on the value "depr_inc_same" if a patient's depression score increased or stayed the same from baseline to post-treatment.  
+
+```{r ex1, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex1-solution}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_dep_resp = case_when(pt_dep_t1 - pt_dep_t0 < 0 ~ "depr_dec",
+                                 pt_dep_t1 - pt_dep_t0 >= 0 ~ "depr_inc_same"))
+
+```
+
+
+```{r prepare-practice}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_dep_resp = case_when(pt_dep_t1 - pt_dep_t0 < 0 ~ "depr_dec",
+                                 pt_dep_t1 - pt_dep_t0 >= 0 ~ "depr_inc_same"))
+
+```
+
+**Exercise 2.** Use the ``table()`` function to make a 2 x 2 table that for that cross-classifies observations by the variables ``group`` and ``pt_dep_resp`` (which you can assume has been added to the data set).
+
+```{r ex2, exercise = TRUE, exercise.lines = 5, message = FALSE, exercise.setup = "prepare-practice"}
+
+```
+
+```{r ex2-solution}
+table(canine_data$group, canine_data$pt_dep_resp)
+
+```
+
+**Exercise 3.** Suppose that investigators want to consider "increase or no change in depression score" as the outcome of interest.  Rearrange the table from Exercise 2 to reflect this.  Store this table as an object called ``group_by_dep_tab`` and show the table.
+
+```{r ex3, exercise = TRUE, exercise.lines = 5, message = FALSE, exercise.setup = "prepare-practice"}
+
+```
+
+```{r ex3-solution}
+# notice that since we keep the column order the same, we don't have to specify anything after the comma
+group_by_dep_tab <- table(canine_data$group, canine_data$pt_dep_resp)[,c(2,1)]
+group_by_dep_tab
+```
+
+```{r prepare-practice2}
+canine_data <- 
+  canine_data %>% 
+  mutate(pt_dep_resp = case_when(pt_dep_t1 - pt_dep_t0 < 0 ~ "depr_dec",
+                                 pt_dep_t1 - pt_dep_t0 >= 0 ~ "depr_inc_same"))
+group_by_dep_tab <- table(canine_data$group, canine_data$pt_dep_resp)[,c(2,1)]
+```
+
+**Exercise 4.** Use the ``CrossTable`` function to obtain the estimated conditional probability of having no change or increase in depressive score among those in the dog therapy group.  You can assume that the ``DescTools`` package has been loaded.
+
+```{r ex4, exercise = TRUE, exercise.lines = 5, message = FALSE, exercise.setup = "prepare-practice2"}
+
+```
+
+```{r ex4-solution}
+# The estimated conditional probability of having no change or increase in depressive score 
+#   among those in the dog therapy group is 0.350.
+CrossTable(group_by_dep_tab) 
+```
+
+**Exercise 5.** Compute the estimated RD, RR, and OR along with their 99\% confidence intervals for having an increase or no change in depression score comparing those in the dog therapy group to those in the standard care group. You can assume that the ``epiR`` package has been loaded.
+
+```{r ex5, exercise = TRUE, exercise.lines = 5, message = FALSE, exercise.setup = "prepare-practice2"}
+
+```
+
+```{r ex5-solution}
+epi.2by2(group_by_dep_tab, conf.level = 0.99) 
+```
+
+**Exercise 6.** Construct a 2 x 2 table object in R using the data below which comes from a hypothetical case-control study.  Show this table.
+
+|               | Case  | Control |  
+|:-------------:|:-----:|:-------:|   
+| **Smoker**    |300    | 50      |  
+| **Non Smoker**|40     | 310     |
+
+```{r ex6, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex6-solution}
+ex6_tab <- matrix(c(300, 50, 40, 310), nrow = 2, byrow = TRUE)
+colnames(ex6_tab) <- c("Case", "Control")
+rownames(ex6_tab) <- c("Smoker", "Non Smoker")
+ex6_tab <- as.table(ex6_tab)
+ex6_tab
+```
