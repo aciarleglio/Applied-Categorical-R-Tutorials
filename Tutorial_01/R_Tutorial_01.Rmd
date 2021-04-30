@@ -1,0 +1,568 @@
+---
+title: "R Tutorial 01"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+knitr::opts_chunk$set(echo = FALSE)
+# shiny::addResourcePath('tt1', here::here("/Tutorial_01"))
+dat_url <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/mus14data.csv")
+medicare_data <- tibble(read.csv(text = dat_url))
+```
+
+## 1 Introduction
+
+The R Tutorials for this course are designed to provide you with the information that you need to be able to effectively use R and RStudio to conduct analysis of categorical data.  They are not meant to make you an expert at R and RStudio.  If that is something you aspire to, then there are plenty of great resources out there - go for it! 
+
+Like most programming languages, there are often multiple ways to arrive at the same result in R.  The methods that I highlight in these tutorials may be different from those you have seen elsewhere or those that you prefer to use yourself.  If you ever prefer to use a different approach than the one I show you, that's fine with me - so long as you end up with right result in the end.
+
+Ideally you will actively engage with the R Tutorials by going through each section in order.  Some sections have short instructional videos while other have readings and guided coding examples.  These tutorials are a good place to experiment with R code and make mistakes since they don't count towards your course grade.  At the end of each tutorial, there will be a section called "More Practice" with examples that are reflective of the type of skills you will need to complete the homework assignments.       
+
+As you work through each tutorial, I recommend creating a script in RStudio in which you replicate all of the code shown. You'll hear more about scripts in Section 3 of this tutorial.    
+
+## 2 Download and Install R and RStudio
+
+Please follow the instructions in the videos below to download, install, and setup R and RStudio on your personal computer.
+
+<!-- [Software Setup Instructions](./tt1/Software Setup Instructions.pdf) -->
+
+**How to install R** (video from RStudio, Inc):
+
+![](https://vimeo.com/203516510){width="70%"}
+
+<br>
+
+**How to install RStudio** (video from RStudio, Inc):
+
+![](https://vimeo.com/203516968){width="70%"}
+
+<br>
+
+**How to install R packages** (video from RStudio, Inc):
+
+Follow the video instructions to install the collection of packages associated with the tidyverse.
+
+![](https://vimeo.com/203516241){width="70%"}
+
+
+## 3 Basics of R and RStudio
+
+The video below will introduce you to the RStudio interface and scripts.
+
+![](https://youtu.be/lMknpUcHeZo){width="70%"}
+
+## 4 Loading Packages
+
+The video below will show you how to load packages in RStudio.
+
+![](https://youtu.be/mmZGexwv6tk){width="70%"}
+
+## 5 Reading in a CSV Data Set
+
+The video below will show you haw to read a CSV data file into RStudio.
+
+We will be using the **mus14data.csv** file discussed in Lecture 01.  Recall that this data set contains information about Medicare recipients.
+
+![](https://youtu.be/QNdYyxztN3s){width="70%"}
+
+## 6 Functions to Describe Data Structure 
+
+In this and subsequent sections, we will be using the ```medicare_data``` object discussed in the last section.  The technical term for the ```medicare_data``` object is a **tibble**.  For our purposes, we can think of a **tibble** as a data frame.  Each row corresponds to an observation from one individual and each column corresponds to a variable. 
+
+You can print the data set on in the console simply by typing the name of the tibble object into R.  Put in the name of the tibble object and hit run.  
+
+```{r printdata, exercise = TRUE, exercise.lines = 3}
+
+```
+
+```{r printdata-solution}
+medicare_data
+```
+
+The function ```nrow()``` computes how many rows (observations) are in the data set.  
+
+Apply the ```nrow()``` function to the ```medicare_data``` object.
+
+```{r nrowfunc, exercise = TRUE, exercise.lines = 3}
+
+```
+
+```{r nrowfunc-solution}
+nrow(medicare_data)
+```
+
+Quick Side Note: To get more information about any function in R, you can simply put a ```?``` in front of the function and run the code.  
+
+Run the line of code below to get more information about the ```nrow()``` function.
+
+```{r nrowinfofunc, exercise = TRUE, exercise.lines = 3}
+?nrow
+```
+
+The function ```ncol()``` computes how many columns (variables) are in the data set.  
+
+Apply the ```ncol()``` function to the ```medicare_data``` object.
+
+```{r ncolfunc, exercise = TRUE, exercise.lines = 3}
+
+```
+
+```{r ncolfunc-solution}
+ncol(medicare_data)
+```
+
+The function ```names()``` prints out the column (variable) names in the data set.  
+
+Apply the ```names()``` function to the ```medicare_data``` object.  Notice that one of the variables is ```private``` which takes the value 1 if a person has supplemental insurance and 0 otherwise.  We will use this variable in the next section.  
+
+```{r namesfunc, exercise = TRUE, exercise.lines = 3}
+
+```
+
+```{r namesfunc-solution}
+names(medicare_data)
+```
+
+You can pick off a specific variable from the tibble by using the ```$``` sign operator.  For example, to pick off and print the value for the ```private``` variable, we can run the code below.
+
+```{r singlevar, exercise = TRUE, exercise.lines = 3}
+medicare_data$private
+```
+
+R functions treat variables according to their class.  Some classes that we will encounter are: **integer**, **double**, **character**, **factor**, and **ordered** (factor).  Without going into much detail, variables of the **integer** or **double** class can be thought of as variables that have numerical values.  Variables of the **character** class are those whose values are strings or character expressions (like names or patient IDs).  Variables of class **factor** are variables that have a fixed and known set of possible values.  The categorical variables that we will be interested in in this course will often be of this class (or we will convert them to variables of this class).  Variables of class **ordered** are similar to variables of the class factor, but the levels of the variable can be ordered in a meaningful way.  
+
+To check the class of a variable in R, you can use the ```class()``` function.  
+
+Apply the ```class()``` function to the ```private``` variable in the ```medicare_data``` tibble object.
+
+```{r classfunc, exercise = TRUE, exercise.lines = 3}
+
+```
+
+```{r classfunc-solution}
+class(medicare_data$private)
+```
+
+Notice that the ```private``` is of the **integer** class even though it really is a categorical variable.  We will need to be aware of this when do any analysis with the ```private``` or, better yet, we can create a new version of the variable that is a **factor**.  We will see how to do this in Section 7.
+
+
+The function ```summary()```, when applied to a tibble object, prints out summary information for each variable in the data set.  The information that gets printed out depends on the type of variable that is being summarized.  The current data set has only integer valued variables, so the ```summary()``` function will print out the minimum, first quartile, median, mean, third quartile, and maximum for each variable.    
+
+Apply the ```summary()``` function to the ```medicare_data``` object.
+
+```{r summaryfunc, exercise = TRUE, exercise.lines = 3}
+
+```
+
+```{r summaryfunc-solution}
+summary(medicare_data)
+```
+
+One more function that can be quite useful for describing categorical variables is the ```table``` function.  This function provides a quick way to count how many observations fall into each category/level of a variable.   
+
+Apply the ```table()``` function to the ```private``` variable to obtain the frequencies for each level.
+
+```{r tablefunc, exercise = TRUE, exercise.lines = 3}
+
+```
+
+```{r tablefunc-solution}
+table(medicare_data$private)
+```
+
+## 7 Creating & Recoding Variables
+
+### Recoding Variables with ```factor()```
+
+In a data set, variables may be coded in a manner that is inappropriate for analysis.  For example, in the medicare data set, the ```private``` variable is coded as 0 if a subject does not have private supplemental insurance or 1 if they do.  The values of 0 and 1 are arbitrary.  Furthermore, since 0 and 1 are integer values, R will treat ```private``` as an integer variable, which may be problematic in subsequent analyses.  We need to convert the ```private``` variable from an integer variable to a **factor** variable in R.  Actually, instead of converting the ```private``` variable itself (since it's not usually a good idea to overwrite variables in a data set), we can create a new version of the ```private``` variable that is a **factor** variable.      
+
+Fortunately, it's easy in R to create a factor variable and append it to the data set.  Let's create a new variable called ```private_fac``` that has value "No_PSI" when ```private``` = 0 and has the value "PSI" when ```private``` = 0.    
+
+To construct this new variable, we need to combine two functions (```mutate``` and ```factor```) via a process called **piping**.
+
+```%>%``` is called the pipe operator.  Without going into too much detail here, the pipe operator makes it easy to chain a bunch of operations together in sequence.  When you write your code with the pipe operator, it tends to be easier to read.  Below is the code for creating the ```private_fac``` factor variable and adding it to the ```medicare_data``` tibble object.  When you run the code, it will appear that nothing has happened, but something has happened in the background.
+
+```{r recoding, exercise = TRUE, exercise.lines = 5, message = FALSE}
+medicare_data <- 
+  medicare_data %>% 
+  mutate(private_fac = factor(private, levels = c(0,1), labels = c("No PSI", "PSI"))) 
+
+```
+
+```{r recoding-solution}
+medicare_data <- 
+  medicare_data %>% 
+  mutate(private_fac = factor(private, levels = c(0,1), labels = c("No PSI", "PSI"))) 
+table(medicare_data$private_fac) # Notice that this table matches table(medicare_data$private)
+```
+
+To explain what this code chunk is doing, let's start with line 3.  
+
+- The ```mutate``` function is creating a new variable called ```private_fac``` that is created by turning the ```private``` variable with levels 0 and 1 into a factor variable with the same levels and with labels "No PSI" and "PSI" corresponding to the levels of 0 and 1 respectively.    
+
+- Notice that the ```factor``` function has 3 arguments (inputs) that are separated by commas. The first argument is the name of the variable that you want to convert into a factor (```private```).  The second argument is ```levels```.  Note that we specify the ```levels``` as ```c(0,1)```.  ```c()``` is a function in R that creates a vector or list.  The third argument for the ```factor``` function is ```labels```. For this argument, we specify what labels we wish to assign to the levels that we specified in the second argument.  It is important to put the labels into a vector that has the same order as the levels vector.  Also, as a rule, you need to surround any characters (non-numbers) with quotation marks.  
+
+If you were to just run line 3, you'd get an error.  (Try it - delete the first 2 lines and run the code.)  That's because R doesn't know what ```private``` is. ```private``` is a variable that "lives" in the tibble object, ```medicare_data```.  This is where the pipe ```%>%``` comes in.  In going from line 2 to line 3, we are "piping" the tibble object ```medicare_data``` through the ```mutate``` function and accessing the ```private``` variable to create a new factor variable called ```private_fac```.
+
+The last part of this code that needs explaining is line 1.  Notice that line 1 uses the symbol ```<-```.  This is called the **assignment operator** in R.  We use the assignment operator to store whatever is on the right side of the ```<-``` into whatever is on the left side of the ```<-```.  Line 1 takes the newly created ```private_fac``` variable and adds it to the ```medicare_data``` tibble.  
+
+Now that the ```private_fac``` variable has been added to the ```medicare_data``` we can check that it has been coded properly.  It's always good to check that your code does what you expect it to do.
+
+Apply the ```table()``` function to the ```private_fac``` variable to confirm it has been correctly coded.  Do this in line 4 of the code chunk above.
+
+### Creating New Variables with ```case_when()```
+
+Another useful function that can be used to create new variables from existing ones is the ```case_when()``` function.  Like the ```factor()``` function, ```case_when()``` is used in conjunction with the ```mutate()``` function.  
+
+```case_when()``` is particularly helpful when you want to use a numerical variable to define a categorical one.  
+
+For example, ```hhincome``` is a numerical variable in the ```medicare_data``` tibble that gives the  annual household income in thousands of dollars.  Suppose that we want to create a new categorical variable ```hhincome_cat``` that has levels "< \$10K", "[\$10K, \$30K)", "[\$30K, \$50K)", and "$\ge$\$50K" where subjects are grouped into these categories based on the value of the ```hhincome``` variable.  
+
+Before creating the new ```hhincome_cat``` variable, take a look at the actual values of ```hhincome``` in the data set.
+
+```{r hhincomlook, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r hhincomlook-solution}
+medicare_data$hhincome
+```
+
+The code chunk below shows how to create this new variable and add it to the ```medicare_data``` tibble.  
+
+```{r casewhenex, exercise = TRUE, exercise.lines = 8, message = FALSE}
+medicare_data <- 
+  medicare_data %>% 
+  mutate(hhincome_cat = case_when(hhincome < 10 ~ "< $10K",
+                                  hhincome >= 10 & hhincome < 30 ~ "[$10K, $30K)",
+                                  hhincome >= 30 & hhincome < 50 ~ "[$30K, $50K)",
+                                  hhincome >= 50 ~ "> $50K")) 
+
+```
+
+```{r casewhenex-solution}
+medicare_data <- 
+  medicare_data %>% 
+  mutate(hhincome_cat = case_when(hhincome < 10 ~ "< $10K",
+                                  hhincome >= 10 & hhincome < 30 ~ "[$10K, $30K)",
+                                  hhincome >= 30 & hhincome < 50 ~ "[$30K, $50K)",
+                                  hhincome >= 50 ~ "> $50K")) 
+table(medicare_data$hhincome_cat)
+```
+
+Notice that this code chunk has a similar structure to the code chunk in which we created the ```private_fac``` variable. Starting at line 3, inside of the ```mutate``` function we are creating a variable called ```hhincome_cat``` that depends on the ```hhincome``` variable.  Inside the ```case_when()``` function, you can see a series of expressions set apart by commas. Each expression has the form: condition ```~``` value.  The condition on the left side of the ```~``` tells R that any observation satisfying that condition will be assigned the value on the right side of the ```~``` for the new variable.  For example, the expression on line 3 means: if ```hhincome``` < 10 assign value "< $10K" for the ```hhincome_cat``` variable.  The expression in line 4 means: if ```hhincome``` is greater than 10 and less than 30 then assign value "[\$10K, \$30K)" for the ```hhincome_cat``` variable.  
+
+Apply the ```table()``` function to the ```hhincome_cat``` variable to confirm it has 4 categories/levels.  Do this in line 7 of the code chunk above.
+
+Notice that the table generated by the code ```table(medicare_data$hhincome_cat)``` doesn't print out with the categories ordered from lowest to highest.  This is because the ```hhincome_cat``` variable that we created is a **character** variable and we haven't told R that the levels are ordered in any meaningful way (the ```case_when()``` function doesn't do this).  We can do this by adding another line inside the mutate function and applying the ```ordered()``` function.  The ```ordered()``` function creates and ordered factor variable in which you can specify the ordering of the categories.  See the code below.
+
+```{r orderedex, exercise = TRUE, exercise.lines = 9, message = FALSE}
+medicare_data <- 
+  medicare_data %>% 
+  mutate(hhincome_cat = case_when(hhincome < 10 ~ "< $10K",
+                                  hhincome >= 10 & hhincome < 30 ~ "[$10K, $30K)",
+                                  hhincome >= 30 & hhincome < 50 ~ "[$30K, $50K)",
+                                  hhincome >= 50 ~ "> $50K"),
+         hhincome_cat = ordered(hhincome_cat, levels = c("< $10K", "[$10K, $30K)", "[$30K, $50K)", "> $50K"))) 
+```
+
+```{r orderedex-solution}
+medicare_data <- 
+  medicare_data %>% 
+  mutate(hhincome_cat = case_when(hhincome < 10 ~ "< $10K",
+                                  hhincome >= 10 & hhincome < 30 ~ "[$10K, $30K)",
+                                  hhincome >= 30 & hhincome < 50 ~ "[$30K, $50K)",
+                                  hhincome >= 50 ~ "> $50K"),
+         hhincome_cat = ordered(hhincome_cat, levels = c("< $10K", "[$10K, $30K)", "[$30K, $50K)", "> $50K"))) 
+table(medicare_data$hhincome_cat)
+```
+
+Line 7 of the code chunk above is instructing R to take the ```hhincome_cat``` variable that was created with the ```case_when()``` function and convert it to an ordered factor with levels ordered according to the levels argument.  Notice the comma at the end of line 6. 
+
+Apply the ```table()``` function to the ```hhincome_cat``` variable to confirm it has 4 categories/levels that are ordered appropriately.  Do this in line 8 of the code chunk above.
+
+## 8 Frequencies & Proportions
+
+```{r prepare-recoding}
+medicare_data <- 
+  medicare_data %>% 
+  mutate(private_fac = factor(private, levels = c(0,1), labels = c("No PSI", "PSI")),
+         hhincome_cat = case_when(hhincome < 10 ~ "< $10K",
+                                  hhincome >= 10 & hhincome < 30 ~ "[$10K, $30K)",
+                                  hhincome >= 30 & hhincome < 50 ~ "[$30K, $50K)",
+                                  hhincome >= 50 ~ "> $50K"),
+         hhincome_cat = ordered(hhincome_cat, levels = c("< $10K", "[$10K, $30K)", "[$30K, $50K)", "> $50K"))) 
+```
+
+Recall from the previous section that the variable ```private_fac``` takes on the value of "PSI" if a person has private supplemental insurance and "No PSI" otherwise.  Suppose that we want to make a frequency table that shows how many subjects have and don't have supplemental insurance. Of course, you can use the ```table()``` function to obtain the frequencies, but here we will see a more versatile way to do this.    
+
+To construct a frequency table, we need to combine three functions (```group_by```, ```summarize```, and ```n```) via **piping**.
+
+**Step 1 in words**: Take the data object (tibble) and group it by the variable of interest (using the ```group_by``` function) .
+
+**Step 1 in code**: ```medicare_data %>% group_by(private_fac)```
+
+**Step 2 in words**: Take the result of Step 1 and summarize (using the ```summarize``` function) the data set by computing the group sizes (using the ```n``` function) for the groups defined by the variable in the ```group_by``` function.
+
+**Step 2 in code**: ```medicare_data %>% group_by(private_fac) %>% summarize(FREQ = n())```
+
+Run the code below to see the result.  Notice that, instead of putting the code all in one line, I used 3 lines of code.  This makes the code easier to read.
+
+```{r compfreq, exercise = TRUE, exercise.setup = "prepare-recoding", exercise.lines = 3, message = FALSE}
+medicare_data %>%
+  group_by(private_fac) %>% 
+  summarize(FREQ = n()) 
+```
+
+Running the code above creates a new tibble (data set) with two rows (corresponding to the groups defined by the variable ```private_fac```) and two columns (variables): (1) the levels of the ```private_fac``` variable which is also called ```private_fac``` and (2) the frequencies in each level, which I decided to call ```FREQ```.    
+
+I arbitrarily chose to call the summary column ```FREQ```, but you can use whatever name you want.
+
+Rename the frequencies ```HOW_MANY```.
+
+```{r compfreq2, exercise = TRUE, exercise.setup = "prepare-recoding", exercise.lines = 3, message = FALSE}
+
+```
+
+```{r compfreq2-solution}
+medicare_data %>%
+  group_by(private_fac) %>% 
+  summarize(HOW_MANY = n()) 
+```
+
+Now, suppose that we want to compute the sample proportions for each level of ```private_fac```.  We can do this by piping the resulting tibble above into a new function that computes the proportions.  This requires the ```mutate``` function.
+
+The ```mutate``` function is a function we can use to create new variables.  
+
+We can create a new variable, let's call it ```PROP``` by taking the ```FREQ``` values and dividing them by the sum of the ```FREQ``` values within the ```mutate``` function.  Run the code below to see the resulting tibble.     
+
+```{r compprop, exercise = TRUE, exercise.setup = "prepare-recoding", exercise.lines = 4, message = FALSE}
+medicare_data %>%
+  group_by(private_fac) %>% 
+  summarize(FREQ = n()) %>% 
+  mutate(PROP = FREQ / sum(FREQ))
+```
+
+We can store the resulting tibble as a tibble object for later use.  For example, in the next tutorial we will use this tibble to create bar plots to graphically represent the data. 
+
+Store the tibble from the last code chunk as an object called ```priv_freq_prop_tab```.  We do this using the arrow assignment operator ```<-```.  See the code chunk below.  
+
+```{r compprop2, exercise = TRUE, exercise.setup = "prepare-recoding", exercise.lines = 6, message = FALSE}
+priv_freq_prop_tab <- 
+  medicare_data %>%
+  group_by(private_fac) %>% 
+  summarize(FREQ = n()) %>% 
+  mutate(PROP = FREQ / sum(FREQ))
+```
+
+## 9 Calculating Probabilities
+
+### Binomial Probabilities
+
+R has built-in functions that make computing binomial probabilities easy.  
+
+Consider the following example from Lecture 01: 
+
+Suppose that you draw a random sample of 5 Americans enrolled in Medicare and that each one has an 18\% chance of having supplemental insurance.  What is the probability that 3 of the 5 have supplemental insurance?
+
+In the lecture we defined Y = the number of people with supplemental insurance out of 5 and confirmed that Y ~ Bin(5, 0.18).  We need to find P(Y = 3).  We can do this using the ```dbinom()``` function.  ```dbinom()``` has 3 comma-separated arguments to specify: **x**, **size**, and **prob**.  **x** is the value of the variable you wish to find the probability of observing (in our case this is 3). **size** is the number of trials (in our case this is 5).  **prob** is the success probability (in our case this is 0.18).  
+
+Run the code chunk below to compute P(Y = 3).
+
+```{r binom1, exercise = TRUE, exercise.lines = 3, message = FALSE}
+dbinom(x = 3, size = 5, prob = 0.18)
+
+```
+
+Compute P(Y = 1).
+
+```{r binom1a, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r binom1a-solution}
+dbinom(x = 1, size = 5, prob = 0.18)
+
+```
+
+Consider another example:  
+
+What is the probability that 3 or fewer of the 5 have supplemental insurance?  
+
+We want to find P(Y $\le$ 3).  Note this is the same as P(Y = 0) + P(Y = 1) + P(Y = 2) + P(Y = 3).  
+
+There several ways to compute this probability in R.  The easy way is to use the ```pbinom()``` function.  The arguments for this function are **q**, **size**, and **prob**.  **size** and **prob** are the same as for the ```dbinom()``` function.  The ```pbinom()``` function gives the cumulative sum of the probabilities of observing variable values from 0 to **q**.   
+
+Run the code chunk below to compute P(Y $\le$ 3).
+
+```{r binom2, exercise = TRUE, exercise.lines = 3, message = FALSE}
+pbinom(q = 3, size = 5, prob = 0.18)
+
+```
+
+Alternatively, we can sum up the individual probabilities calculated with the ```dbinom()``` function.  Run the code chunk below to see that it is equivalent to ```pbinom(q = 3, size = 5, prob = 0.18)```.
+
+```{r binom3, exercise = TRUE, exercise.lines = 3, message = FALSE}
+dbinom(x = 3, size = 5, prob = 0.18) + dbinom(x = 2, size = 5, prob = 0.18) + dbinom(x = 1, size = 5, prob = 0.18) + dbinom(x = 0, size = 5, prob = 0.18)
+```
+
+Yet another way to compute this probability is given below. 
+
+```{r binom4, exercise = TRUE, exercise.lines = 3, message = FALSE}
+sum(dbinom(x = 0:3, size = 5, prob = 0.18))
+```
+
+When computing binomial probabilities with R using the ```pbinom()```, be careful that you are using the correct value of **q**.  For example, the code for computing P(Y $\le$ 3) is different than the code for computing P(Y < 3).  For P(Y $\le$ 3), we need to set q = 3, but for P(Y < 3) we need to set q = 2 since this probability corresponds to P(Y = 0) + P(Y = 1) + P(Y = 2).   
+
+### Normal Probabilities
+
+R also has a built-in function ```pnorm()``` that makes computing normal probabilities easy.  The arguments for the ```pnorm()``` function are **q**, **mean**, and **sd**.  **mean** and **sd** are used to specify the mean and standard deviation of the normal distribution, respectively.  The ```pnorm()``` function computes the area under the normal curve below **q**.
+
+Example 1. Let X ~ N($\mu=$ 5, $\sigma^2=$ 16).  Find the probability P(X < 2.5).  
+
+The code chunk below shows how to compute this probability.
+
+```{r norm1, exercise = TRUE, exercise.lines = 3, message = FALSE}
+pnorm(q = 2.5, mean = 5, sd = sqrt(16))
+```
+
+Example 2. Find the probability P(1 < X < 2.5).  
+
+The code chunk below shows how to compute this probability.
+
+```{r norm2, exercise = TRUE, exercise.lines = 3, message = FALSE}
+pnorm(q = 2.5, mean = 5, sd = sqrt(16)) - pnorm(q = 1, mean = 5, sd = sqrt(16))
+```
+
+## More Practice
+
+```{r prepare-practice}
+medicare_data <- 
+  medicare_data %>% 
+  mutate(private_fac = factor(private, levels = c(0,1), labels = c("No PSI", "PSI")),
+         hhincome_cat = case_when(hhincome < 10 ~ "< $10K",
+                                  hhincome >= 10 & hhincome < 30 ~ "[$10K, $30K)",
+                                  hhincome >= 30 & hhincome < 50 ~ "[$30K, $50K)",
+                                  hhincome >= 50 ~ ">= $50K"),
+         hhincome_cat = ordered(hhincome_cat, levels = c("< $10K", "[$10K, $30K)", "[$30K, $50K)", ">= $50K")))
+
+```
+
+The exercises below use the ```medicare_data``` tibble discussed throughout this tutorial.  You can assume that the ```private_fac``` and ```hhincome_cat``` variables have been added to the data set.
+
+**Exercise 1.** Another variable in the ```medicare_data``` tibble is ```hisp```.  The ```hisp``` variable is an integer variable that is coded as 0 if a subject is not Hispanic or 1 if a subject is Hispanic.  Use the ```table()``` function to determine how many subjects fall into each of these categories.
+
+```{r hisp1, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r hisp1-solution}
+table(medicare_data$hisp)
+```
+
+**Exercise 2.** Create a new variable ```hisp_fac``` that is a factor variable with value "Not Hispanic" if ```hisp``` = 0 or "Hispanic" when ```hisp``` = 1.  Add this variable to the ```medicare_data``` tibble.  Then use the ```table()``` function to confirm that the ```hisp_fac``` is equivalent to the ```hisp``` variable.
+
+```{r hisp2, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r hisp2-solution}
+medicare_data <- 
+  medicare_data %>% 
+  mutate(hisp_fac = factor(hisp, levels = c(0,1), labels = c("Not Hispanic", "Hispanic")))
+table(medicare_data$hisp_fac)
+```
+
+**Exercise 3.** ```age``` is another variable in the ```medicare_data``` tibble corresponding to age in years.  Create a new ordered factor variable ```age_cat``` that assigns each subject to one of each of the following age categories: < 65, [65, 69), or $\ge$ 69.   Add this variable to the ```medicare_data``` tibble. Then make a table that shows the frequencies and proportions of subjects in each age category and store it as the tibble object ```age_fac_tab```.  
+
+```{r age1, exercise = TRUE, exercise.lines = 20, message = FALSE}
+
+```
+
+```{r age1-solution}
+# this code creates the age_fac variable and adds it to the medicare_data tibble
+medicare_data <- 
+  medicare_data %>% 
+  mutate(age_fac = case_when(age < 65 ~ "< 65",
+                             age >= 65 & age < 69 ~ "[65, 69)",
+                             age >= 69 ~ ">= 69"),
+         age_fac = ordered(age_fac, levels = c("< 65", "[65, 69)", ">= 69")))
+
+# this code creates the frequency/proportion table
+age_fac_tab <- 
+medicare_data %>% 
+  group_by(age_fac) %>% 
+  summarize(FREQ = n()) %>% 
+  mutate(PROP = FREQ / sum(FREQ))
+
+# print out the table
+age_fac_tab
+```
+
+**Exercise 4.** Let the random variable Y ~ Bin(10,0.67).  Compute P(Y = 8).
+
+```{r ex4, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex4-solution}
+dbinom(x = 8, size = 10, prob = 0.67)
+```
+
+**Exercise 5.** Let the random variable Y ~ Bin(10,0.67).  Compute P(Y $\le$ 4).
+
+```{r ex5, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex5-solution}
+pbinom(x = 4, size = 10, prob = 0.67)
+```
+
+**Exercise 6.** Let the random variable Y ~ Bin(10,0.67).  Compute P(Y < 6).
+
+```{r ex6, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex6-solution}
+pbinom(x = 5, size = 10, prob = 0.67)
+```
+
+**Exercise 7.** Let the random variable Y ~ Bin(10,0.67).  Compute P(Y > 6).  Hint: P(Y > 6) = 1 - P(Y $\le$ 6).
+
+```{r ex7, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex7-solution}
+1 - pbinom(x = 6, size = 10, prob = 0.67)
+```
+
+**Exercise 8.** Let the random variable Y ~ N($\mu=$ 4, $\sigma^2=$ 15).  Compute P(Y < 3).
+
+```{r ex8, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex8-solution}
+pnorm(3, mean = 4, sd = sqrt(15))
+```
+
+**Exercise 9.** Let the random variable Y ~ N($\mu=$ 4, $\sigma^2=$ 15).  Compute P(Y > 3). Hint: P(Y > 3) = 1 - P(Y $\le$ 3).
+
+```{r ex9, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex9-solution}
+1 - pnorm(3, mean = 4, sd = sqrt(15))
+```
+
+
+
+
