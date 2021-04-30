@@ -1,0 +1,424 @@
+---
+title: "R Tutorial 03"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+library(gmodels)
+library(epiR)
+library(Exact)
+library(DescTools)
+knitr::opts_chunk$set(echo = FALSE)
+# shiny::addResourcePath('tt2', here::here("/Tutorial_02"))
+dat_url <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/canine_dat_wide.csv")
+canine_data <- tibble(read.csv(text = dat_url))
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- An alternative approach for creating contingency tables using the ``xtabs()`` function.
+- How to compute test statistics, p-values, and other relevant quantities for Pearson's $\chi^2$-test and the LRT.  
+- How to compute p-values for exact tests for independence.
+
+In subsequent sections, we will be using the data from two examples:
+
+__Example 1.__ The table below shows data from a sample of 6430 women who served in the US military between 1965 and 1973.  These women were cross classified based on whether they served in Vietnam (served, did not serve) and whether they developed breast cancer (breast cancer (BC), no breast cancer (NO BC)). (Selvin, S. (2008) Survival Analysis for Epidemiologic and Medical Research: A Practical Guide. Cambridge: Cambridge University Press.)
+
+|                   | BC    | No BC |  
+|:-----------------:|:-----:|:-----:|   
+| **served**        |170    | 3222  |  
+| **did not serve** |126    | 2912  |
+
+__Example 2.__ A retrospective study of pre-school students (ages 4 - 5) looked at the association between number of sugary drinks consumed per day and whether or not the child was overweight (defined as BMI $\ge$ 95th percentile).  The table below shows the data from pre-school students (ages 4 - 5) who were classified as normal or underweight (BMI < 85th percentile) when they were 2-3 years old.  (Overweight Among Low-Income Preschool Children Associated With the Consumption of Sweet Drinks: Missouri, 1999–2002.  Welsh et al. *Pediatrics* 2005: 115 (2) e223-e229.)
+
+| Number of Sweet Drinks per Day | Overweight  | Not Overweight   |
+|:-------------:|:----:|:----:|   
+| **0**         |22    | 930  |  
+| **1**         |73    | 2074 |
+| **2**         |56    | 1681 |
+| **3 or more** |102   | 3390 |
+
+## 2 The ``xtabs()`` function
+
+We have already learned two ways to create a table object in R:
+
+(1) Read in a data set, pick off the row and column variables, and use these as arguments in the ``table()`` function.  This method is used when you have the raw data available.  
+(2) Use the ``matrix()`` function to directly enter the cell frequencies, then convert the matrix to a table using the ``table()`` function.  This method is used when you already have the cell frequencies for the table you wish to make.    
+
+If you have cell frequencies available, then an alternative approach is to first make a tibble object with those frequencies and their corresponding category levels and then use the ``xtabs()`` function on the tibble to make the contingency table.  
+
+Here's how we do this for the Example 1 data (reprinted below).
+
+|                   | BC    | No BC |  
+|:-----------------:|:-----:|:-----:|   
+| **served**        |170    | 3222  |  
+| **did not serve** |126    | 2912  |
+
+First make a tibble with all combinations of row and column values along with the corresponding frequencies.  We want to create a tibble that looks like:
+
+| serv_var      | bc_var |  freq_var  |  
+|:-------------:|:----:|:----:|   
+| served        |BC    | 170  |  
+| did not serve |BC    | 126  |
+| served        |No BC | 3222 |  
+| did not serve |No BC | 2912 |
+
+To do this, we can create the ``serv_var``, ``bc_var``, and ``freq_var`` separately.  Then we can combine them into one tibble that we will call ``vietnam_data``.  Run the code below and show the data set.  (For those of you familiar with SAS, this is how you typically implement the data step before running proc freq to make a contingency table.)
+
+```{r tab01, exercise = TRUE, exercise.lines = 6}
+serv_var <- c("served", "did not serve", "served", "did not serve")
+bc_var <- c("BC", "BC", "No BC", "No BC")
+freq_var <- c(170, 126, 3222, 2912)
+vietnam_data <- tibble(serv_var, bc_var, freq_var)
+
+```
+
+```{r tab01-solution}
+vietnam_data
+```
+Now, we can use the ``xtabs()`` function.  The ``xtabs()`` is from the ``stats`` package. This package should be automatically loaded when you open R (i.e., there is no need to use the ``library()`` function to load this package). There are two arguments for the ``xtabs()`` function: (1) a formula that specifies the variable with the frequencies, the row variable, and the column variable and (2) the data argument.
+
+The structure of the formula is "frequency variable ~ row variable + column variable" and the data argument is simply the name of the tibble in which the variables in your formula live.  Below is the code for creating the 2 x 2 table.  Run the code to see the table.  
+
+```{r prepare-xtabs1}
+serv_var <- c("served", "did not serve", "served", "did not serve")
+bc_var <- c("BC", "BC", "No BC", "No BC")
+freq_var <- c(170, 126, 3222, 2912)
+vietnam_data <- tibble(serv_var, bc_var, freq_var)
+```
+
+```{r tab02, exercise = TRUE, exercise.setup = "prepare-xtabs1", exercise.lines = 3}
+xtabs(freq_var ~ serv_var + bc_var, data = vietnam_data)
+```
+
+Notice that table has "did not serve" in row 1 and "served" in row 2.  If we want to reverse this, we can use the same approach we used in the last tutorial.  That is, we can tell R that we want to switch rows 1 and 2. Run the code below to do this.
+
+```{r tab03, exercise = TRUE, exercise.setup = "prepare-xtabs1", exercise.lines = 3}
+xtabs(freq_var ~ serv_var + bc_var, data = vietnam_data)[c(2,1),]
+```
+
+We can store this as a table object called ``vietnam_tab`` for use in the next section.
+
+```{r tab04, exercise = TRUE, exercise.setup = "prepare-xtabs1", exercise.lines = 3}
+vietnam_tab <- xtabs(freq_var ~ serv_var + bc_var, data = vietnam_data)[c(2,1),]
+```
+
+It may seem unnecessary to introduce another way to make contingency tables. However, this approach makes it easier to construct and work with stratified contingency tables - a topic that we will cover in week 5.  Getting familiar with the ``xtabs()`` function now will pay off later.
+
+Let's use the ``xtabs()`` function to make the 4 x 2 table from Example 2 (reprinted below).
+
+| Number of Sweet Drinks per Day | Overweight  | Not Overweight   |
+|:-------------:|:----:|:----:|   
+| **0**         |22    | 930  |  
+| **1**         |73    | 2074 |
+| **2**         |56    | 1681 |
+| **3 or more** |102   | 3390 |
+
+```{r ex2tab, exercise = TRUE, exercise.lines = 17}
+# create the variable that indicates number of sugary drinks per day
+drinks_var <- c("0", "0", "1", "1", "2", "2", "3 or more", "3 or more")
+# create the variable that indicates overweight status
+weight_var <- c("over", "not over", "over", "not over", "over", "not over", "over", "not over")
+# create the variable with the cell counts
+freq_var <- c(22, 930, 73, 2074, 56, 1681, 102, 3390)
+# combine the 3 variables into a tibble
+drinks_data <- tibble(drinks_var, weight_var, freq_var)
+# create the 4 x 2 table 
+drinks_tab <- xtabs(freq_var ~ drinks_var + weight_var, data = drinks_data)
+# look at the 4 x 2 table
+drinks_tab
+# this looks good except we want to change the order of the columns
+drinks_tab <- drinks_tab[,c(2,1)]
+# check the table 
+drinks_tab
+```
+
+We will use the ``drinks_tab`` object in the next section.  
+
+## 3 Pearson's $\chi^2$-test
+
+There are multiple ways to conduct Pearson's $\chi^2$-test for independence in R.  Below we will consider two here.
+
+### The ``chisq.test()`` Function
+
+The arguments for the ``chisq.test()`` function are (1) a table object (corresponding to your contingency table) and (2) whether you want to compute the test statistic with (correct = TRUE) or without (correct = FALSE) a continuity correction.  
+
+If we want to conduct Pearson's $\chi^2$-test for Example 1, we can use the code below.  Here, we are storing all of the output from the function into an object called ``vietnam_chisq``.  Run the code to view the output.
+
+```{r prepare-xtabs2}
+serv_var <- c("served", "did not serve", "served", "did not serve")
+bc_var <- c("BC", "BC", "No BC", "No BC")
+freq_var <- c(170, 126, 3222, 2912)
+vietnam_data <- tibble(serv_var, bc_var, freq_var)
+vietnam_tab <- xtabs(freq_var ~ serv_var + bc_var, data = vietnam_data)[c(2,1),]
+```
+
+```{r chisq01, exercise = TRUE, exercise.setup = "prepare-xtabs2", exercise.lines = 3}
+# recall that vietnam_tab is the 2 x 2 table for created in the preceding section
+vietnam_chisq <- chisq.test(vietnam_tab, correct = FALSE)
+vietnam_chisq
+```
+
+Pearson's $\chi^2$-test should only be used if the all of the expected cell frequencies are 5 or greater.  We should check these expected cell frequencies.  The ``chisq.test()`` does more "behind the scenes" than just compute the test statistic, degrees of freedom, and p-value.  It also computes the expected cell frequencies, cell residuals, and standardized residuals.  When you create an object from the ``chisq.test()`` function, the expected cell frequencies are stored as an element called ``expected``.  You can select and view this element by running the following code.
+
+```{r prepare-xtabs3}
+serv_var <- c("served", "did not serve", "served", "did not serve")
+bc_var <- c("BC", "BC", "No BC", "No BC")
+freq_var <- c(170, 126, 3222, 2912)
+vietnam_data <- tibble(serv_var, bc_var, freq_var)
+vietnam_tab <- xtabs(freq_var ~ serv_var + bc_var, data = vietnam_data)[c(2,1),]
+vietnam_chisq <- chisq.test(vietnam_tab, correct = FALSE)
+```
+
+```{r chisq02, exercise = TRUE, exercise.setup = "prepare-xtabs3", exercise.lines = 3}
+vietnam_chisq$expected
+```
+
+The standardized residuals can be extracted by using the following code.
+
+```{r chisq03, exercise = TRUE, exercise.setup = "prepare-xtabs3", exercise.lines = 3}
+vietnam_chisq$stdres
+```
+
+The ``chisq.test()`` function can be used for any size contingency table.  Below is the code for conducting Pearson's $\chi^2$-test for independence using the data from Example 2.  Recall that in the previous section, we created a 4 x 2 table object called ``drinks_tab`` with the Example 2 data in it.  Run the code and investigate the output.    
+
+```{r prepare-ex201}
+drinks_var <- c("0", "0", "1", "1", "2", "2", "3 or more", "3 or more")
+weight_var <- c("over", "not over", "over", "not over", "over", "not over", "over", "not over")
+freq_var <- c(22, 930, 73, 2074, 56, 1681, 102, 3390)
+drinks_data <- tibble(drinks_var, weight_var, freq_var)
+drinks_tab <- xtabs(freq_var ~ drinks_var + weight_var, data = drinks_data)
+drinks_tab <- drinks_tab[,c(2,1)]
+```
+
+```{r ex2chisq, exercise = TRUE, exercise.setup = "prepare-ex201",exercise.lines = 9}
+# run Pearson's chi-squared test and store it as an object
+drinks_chisq <- chisq.test(drinks_tab, correct = FALSE)
+# check the expected cell frequencies
+drinks_chisq$expected
+# show the output from the chisq.test function
+drinks_chisq
+# look at the stanardized residuals
+drinks_chisq$stdres
+```
+
+### The ``CrossTable()`` Function
+
+We can also use the ``CrossTable()`` function from the ``gmodels`` package to conduct Pearson's $\chi^2$-test for independence.  The first argument for the ``CrossTable()`` function is the table object.  The other arguments you should specify are: ``chisq = TRUE`` to conduct Pearson's $\chi^2$-test for independence, and ``expected = TRUE`` to print the expected cell counts.  The code below stores the output from the ``CrossTable()`` function in an object called ``vietnam_chisq_CT`` and then displays it. (The ``CrossTable()`` automatically prints the table.)   
+
+<!-- ``expected = TRUE`` to see the expected cell frequencies, and ``sresid = TRUE`` to see the standardized residuals.  Here we are also including ``format = "SPSS"`` as an optional argument (I'm doing this here because the standardized residuals won't print unless I set the format argument to "SPSS".  You may not need to do this if you are using a different version of the gmodels package.)   -->
+
+```{r chisq04, exercise = TRUE, exercise.setup = "prepare-xtabs3", exercise.lines = 3}
+vietnam_chisq_CT <- CrossTable(vietnam_tab, chisq = TRUE, expected = TRUE)
+```
+
+In the output from the code above, we can see the expected cell frequencies as the second value in each cell of the table and at the bottom, we have results for Pearson's $\chi^2$-test with and without continuity correction.
+
+We can pick off the standardized residuals using the following code: ``vietnam_chisq_CT$chisq$stdres``.  Run this code in the field below to obtain the standardized residuals. (Annoyingly, the whole table gets reprinted every time you call an object created by the ``CrossTable()`` function.  I don't know of a way to make it stop doing this. Oh well.)
+
+```{r prepare-xtabs4}
+serv_var <- c("served", "did not serve", "served", "did not serve")
+bc_var <- c("BC", "BC", "No BC", "No BC")
+freq_var <- c(170, 126, 3222, 2912)
+vietnam_data <- tibble(serv_var, bc_var, freq_var)
+vietnam_tab <- xtabs(freq_var ~ serv_var + bc_var, data = vietnam_data)[c(2,1),]
+vietnam_chisq_CT <- CrossTable(vietnam_tab, chisq = TRUE, expected = TRUE)
+```
+
+```{r chisq05, exercise = TRUE, exercise.setup = "prepare-xtabs4", exercise.lines = 3}
+
+```
+
+```{r chisq05-solution}
+vietnam_chisq_CT$chisq$stdres
+```
+
+Let's consider what the code ``vietnam_chisq_CT$chisq$stdres`` is doing.  ``vietnam_chisq_CT`` is an object created by the ``CrossTable()`` function.  Inside this object is another object called ``chisq`` that contains all of the computed information related to Pearson's $\chi^2$-test (without continuity correction) and inside this object is another object called ``stdres`` that holds the standardized residuals.  The ``$`` is used we pick off objects. 
+
+Like the ``chisq.test()`` function, the ``CrossTable()`` function can be used for contingency tables of any size.  Use the ``CrossTable()`` with the ``drinks_tab`` object that is based on the data from Example 2 to conduct Pearson's $\chi^2$-test.
+
+```{r chisq06, exercise = TRUE, exercise.setup = "prepare-ex201", exercise.lines = 3}
+
+```
+
+```{r chisq06-solution}
+CrossTable(drinks_tab, chisq = TRUE, expected = TRUE)
+```
+
+## 4 Likelihood Ratio Test
+
+We will use the ``GTest()`` function from the ``gmodels`` package to conduct the LRT.  The only argument we need to specify for this function is the table object.
+
+The code below conducts the LRT using the ``vietnam_tab`` object (created in Section 2) based on the data from Example 1.  Run the code and inspect the output.  
+
+```{r prepare-xtabs5}
+serv_var <- c("served", "did not serve", "served", "did not serve")
+bc_var <- c("BC", "BC", "No BC", "No BC")
+freq_var <- c(170, 126, 3222, 2912)
+vietnam_data <- tibble(serv_var, bc_var, freq_var)
+vietnam_tab <- xtabs(freq_var ~ serv_var + bc_var, data = vietnam_data)[c(2,1),]
+```
+
+```{r lrt01, exercise = TRUE, exercise.setup = "prepare-xtabs5", exercise.lines = 3}
+GTest(vietnam_tab)
+```
+
+The code below conducts the LRT using the ``drinks_tab`` object (created in Section 2) based on the data from Example 2.  Run the code and inspect the output.
+```{r lrt02, exercise = TRUE, exercise.setup = "prepare-ex201", exercise.lines = 3}
+GTest(drinks_tab)
+```
+
+As with the ``chisq.test()`` function, if we store the output from the ``GTest()`` function as an object, we can pick off the expected cell frequencies.  These expected frequencies will be the same as those computed by the ``chisq.test()`` function.    
+
+## 5 Exact Tests
+
+We can conduct Fisher's exact test using the ``fisher.test()`` function.  The only argument we need to specify for this function is the table object.  You can also specify the confidence level (``conf.level``) if you want the function to compute an exact confidence interval for the odds ratio. The default confidence level is 0.95.  We didn't cover exact confidence intervals for ORs in lecture, but you can easily obtain them with this function.   
+
+The code below conducts Fisher's exact test using the ``vietnam_tab`` object (created in Section 2) based on the data from Example 1.  Run the code and inspect the output.  
+```{r fisher01, exercise = TRUE, exercise.setup = "prepare-xtabs5", exercise.lines = 3}
+fisher.test(vietnam_tab)
+```
+
+We can also use the ``CrossTable()`` function as we did when conducting Pearson's $\chi^2$-test, except we need to specify ``fisher = TRUE`` instead of ``chisq = TRUE``.  The code below conducts Fisher's exact test using the ``vietnam_tab`` object (created in Section 2) based on the data from Example 1.  Run the code and inspect the output. 
+
+```{r fisher01a, exercise = TRUE, exercise.setup = "prepare-xtabs5", exercise.lines = 3}
+CrossTable(vietnam_tab, fisher = TRUE, expected = TRUE)
+```
+
+Notice that the output above shows results for Fisher's exact test under the different possible alternative hypotheses.  We are primarily interested in the output under ``Alternative hypothesis: true odds ratio is not equal to 1`` since this corresponds to the two-sided test. 
+
+Though we did not cover it in class, you can also conduct an exact test for contingency table that are larger than 2 x 2.  The code below conducts an exact test for independence using the ``drinks_tab`` object (created in Section 2) based on the data from Example 1.  Run the code and inspect the output.
+
+```{r fisher02, exercise = TRUE, exercise.setup = "prepare-ex201", exercise.lines = 3}
+fisher.test(drinks_tab)
+```
+
+Fisher–Boschloo’s test can be conducted using the ``exact.test()`` function from the ``Exact`` package.  The first argument for this function is a table object. We also need to specify ``method = "boschloo"`` and ``to.plot = FALSE``.  The code below conducts Fisher–Boschloo’s test using the data from Example 1. (You can assume that the ``Exact`` package has been loaded here.)
+
+```{r fisherbo1, exercise = TRUE, exercise.setup = "prepare-xtabs5", exercise.lines = 3}
+exact.test(vietnam_tab, method = "boschloo", to.plot = FALSE)
+```
+
+## More Practice
+
+**Exercise 1.** Generate the following 2 x 2 table from a hypothetical case-control study using the ``xtabs()`` function.  Store it as an object called ``ex1_tab``.  Make sure that the rows and columns match the table below. 
+
+|               | Case  | Control |  
+|:-------------:|:-----:|:-------:|   
+| **Smoker**    |300    | 50      |  
+| **Non Smoker**|40     | 310     |
+
+```{r ex1, exercise = TRUE, exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex1-solution}
+smoke_var <- c("Smoker", "Non Smoker", "Smoker", "Non Smoker")
+casecont_var <- c("Case", "Case", "Control", "Control")
+freq_var <- c(300, 40, 50, 310)
+smoke_data <- tibble(smoke_var, casecont_var, freq_var)
+ex1_tab <- xtabs(freq_var ~ smoke_var + casecont_var, data = smoke_data)[c(2,1),]
+ex1_tab
+```
+
+**Exercise 2.** Suppose that we want to assess if there is an association between case/control status and smoking status using the data from Exercise 1.  Use the ``chisq.test()`` function to perform Pearson's $\chi^2$-test for independence.  Be sure to inspect the expected cell frequencies before interpreting the test results.  
+
+```{r prepare-ex2}
+smoke_var <- c("Smoker", "Non Smoker", "Smoker", "Non Smoker")
+casecont_var <- c("Case", "Case", "Control", "Control")
+freq_var <- c(300, 40, 50, 310)
+smoke_data <- tibble(smoke_var, casecont_var, freq_var)
+ex1_tab <- xtabs(freq_var ~ smoke_var + casecont_var, data = smoke_data)[c(2,1),]
+```
+
+```{r ex2, exercise = TRUE, exercise.setup = "prepare-ex2", exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex2-solution}
+# run the chisq.test function
+ex1_chisq <- chisq.test(ex1_tab, correct = FALSE)
+# inspect the expected cell frequencies
+ex1_chisq$expected
+# look at the test results
+ex1_chisq
+```
+
+**Exercise 3.** Redo Exercise 2. using the ``CrossTable()`` function. Store the results of this function as the object ``ex1_crosstab``.  Also show the standardized residuals.  
+
+```{r ex3, exercise = TRUE, exercise.setup = "prepare-ex2", exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex3-solution}
+# run the CrossTable function (table automatically prints)
+ex1_crosstab <- CrossTable(ex1_tab, chisq = TRUE, expected = TRUE)
+# show the standardized residuals
+ex1_crosstab$chisq$stdres
+```
+
+**Exercise 4.**  Use the ``GTest()`` function to perform the LRT for independence using the data from Exercise 1.  You may assume that the ``gmodels`` library has been loaded.  
+
+```{r ex4, exercise = TRUE, exercise.setup = "prepare-ex2", exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex4-solution}
+GTest(ex1_tab)
+```
+
+**Exercise 5.**  Use the ``fisher.test()`` function to perform Fisher's exact test using the data from Exercise 1.  
+
+```{r ex5, exercise = TRUE, exercise.setup = "prepare-ex2", exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex5-solution}
+fisher.test(ex1_tab)
+```
+
+**Exercise 6.**  Use the ``exact.test()`` function from the ``Exact`` package to perform Fisher–Boschloo’s test using the data from Exercise 1.  You can assume that the ``Exact`` package has been loaded.
+
+```{r ex6, exercise = TRUE, exercise.setup = "prepare-ex2", exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex6-solution}
+exact.test(ex1_tab, method = "boschloo", to.plot = FALSE)
+```
+
+**Exercise 7.**  (A more challenging contingency table to make!) Generate the following 3 x 4 table using the ``xtabs()`` function.  Store it as an object called ``ex7_tab``.  Make sure that the rows and columns match the table below. 
+
+|              | North | South | East | West |  
+|:------------:|:-----:|:-----:|:----:|:----:|   
+| **Green**    |15     | 23    |24    | 44   |  
+| **Red**      |58     | 18    |35    | 27   |
+| **Blue**     |12     | 31    |73    | 50   |
+
+```{r ex7, exercise = TRUE, exercise.lines = 16, message = FALSE}
+
+```
+
+```{r ex7-solution}
+# create the row, column, and cell count (frequency variables)
+row_var <- c("Green", "Red", "Blue", "Green", "Red", "Blue", "Green", "Red", "Blue", "Green", "Red", "Blue")
+col_var <- c("North", "North", "North", "South", "South", "South", "East", "East", "East", "West", "West", "West")
+freq_var <- c(15, 58, 12, 23, 18, 31, 24, 35, 73, 44, 27, 50)
+# put the variables into a tibble
+ex7_data <- tibble(row_var, col_var, freq_var)
+# use xtabs to make the 3 x 4 table
+ex7_tab <- xtabs(freq_var ~ row_var + col_var, data = ex7_data)
+# inspect
+ex7_tab
+# need to change both row order and column order to match the table above
+ex7_tab <- ex7_tab[c(2,3,1),c(2,3,1,4)]
+# inspect
+ex7_tab
+```

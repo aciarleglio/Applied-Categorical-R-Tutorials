@@ -1,0 +1,505 @@
+---
+title: "R Tutorial 04"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+library(gmodels)
+library(epiR)
+library(Exact)
+library(DescTools)
+knitr::opts_chunk$set(echo = FALSE)
+dat_url <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/mus14data.csv")
+hrs_data <- tibble(read.csv(text = dat_url))
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- Types of data that can be used in fitting GLMs.
+- How to fit GLMs using the ``glm()`` function.
+- How to handle categorical predictors in GLMs.  
+- How to use the ``summary()``, ``coef()``, and ``exp()`` functions to understand fitted GLMs. 
+- How to compute confidence intervals for GLM parameters.
+- How to obtain predicted values from GLMs. 
+
+## 2 Individual vs. Group Level Data
+
+It is useful to distinguish between what we will call **individual level** and **group level** data sets.  
+
+Before defining these terms, we need to define a **predictor profile**.  Suppose that you wish to assess the relationship between a binary response ($D$, $\bar{D}$) and a set of 3 predictors ($x_1, x_2$, and $x_3$). A **predictor profile** for an observation is simply the collection of values for $x_1, x_2$, and $x_3$.  To fix ideas, let's let $x_1$ = exposure status ($E$, $\bar{E}$), $x_2$ = sex (M, F), and $x_3$ = weight in pounds (measured very precisely - like to the 10th decimal place because the investigators have a really great scale).         
+
+We can think of an **individual level** data set as one for which the number of unique **predictor profiles** is equal to the number of observations.  In the example above, where the predictors are $x_1, x_2$, and $x_3$, it is reasonable to think that there are as many unique **predictor profiles** as there are observations - especially if weight is measured very precisely.  So, we can think about a data set with $x_1, x_2$, and $x_3$ as **individual level** data.    
+
+A **group level** data set is one for which the number of unique predictor profiles is smaller than the number of observations (often much smaller). In the example above, suppose instead that we only cared about the association between the binary response and the predictors $x_1$ (exposure status) and $x_2$ (sex). In this case, there are only 4 unique predictor profiles: exposed male, exposed female, non-exposed male, and non-exposed female.  And if there are, for example, 100 observations, then clearly the number of unique **predictor profiles** (4) is smaller than the number of observations (100).   
+
+Hopefully, these examples illustrate that the designation of **individual level** or **group level** depends on what predictors are under consideration.
+ 
+Both **individual level** and **group level** can (and are typically) stored in an Excel/csv-like file where each row corresponds to one observation. **Group level** data can also be collapsed and presented as a contingency table or multiple contingency tables.  
+
+Later in the course we will see that whether data are **individual level** or **group level** will have implications on how we assess the adequacy of a fitted GLM.  The immediate relevance of whether data are **individual level** or **group level** has to do with how we fit GLMs in R.  
+
+If you have **individual level** or **group level** data in an Excel/csv-like file, where each row corresponds to one observation, then you can directly use this data set to fit a GLM in R.  However, if you have **group level** data that is given to you as a contingency table (or multiple contingency tables) then you have to create a tibble in R with this information.  This tibble object should be created with one variable for each predictor as well as one variable for the number of "successes" and another variable for the number of "failures" observed for the response variable.   
+
+**Example 1**. Suppose that we want to fit a logistic regression model with disease status as the response ($D$, $\bar{D}$) and $x_1$ = exposure status ($E$, $\bar{E}$) as the predictor based on the data in the contingency table below.
+
+|           | $D$ | $\bar{D}$ |  
+|:---------:|:---:|:-------:|   
+| $E$       |20   | 40      |  
+| $\bar{E}$ |15   | 35      |
+
+The code chunk below creates a tibble with these data that can be used to fit a GLM in R. Run the code to see the structure of the tibble.
+
+```{r gldata01, exercise = TRUE, exercise.lines = 13}
+# it is good practice to create categorical variables as factors
+# so that you can specify the reference level by listing that level
+# first in the levels argument 
+# create vector with exposure levels - here we make "Ebar" the reference level
+exposure_var <- factor(c("E", "Ebar"), levels = c("Ebar", "E"))
+# create vector with number of "successes" at each exposure level
+d_freq <- c(20, 15)
+# create vector with number of "failures" at each exposure level
+dbar_freq <- c(40, 35)
+# create the tibble
+example1_data <- tibble(exposure_var, d_freq, dbar_freq)
+example1_data
+```
+
+**Example 2**. Suppose that we want to fit a logistic regression model with disease status as the response ($D$, $\bar{D}$) and with both $x_1$ = exposure status ($E$, $\bar{E}$) and $x_2$ = sex (M, F) as the predictors based on the data in the contingency tables below.
+
+| sex = M   | $D$ | $\bar{D}$ |  
+|:---------:|:---:|:-------:|   
+| $E$       |12   | 30      |  
+| $\bar{E}$ |6    | 5      |
+
+| sex = F   | $D$ | $\bar{D}$ |  
+|:---------:|:---:|:-------:|   
+| $E$       |8    | 10      |  
+| $\bar{E}$ |9    | 30      |
+
+The code chunk below creates a tibble with these data that can be used to fit a GLM in R. Run the code to see the structure of the tibble.
+
+```{r gldata02, exercise = TRUE, exercise.lines = 12}
+# create vector with sex levels - here we select "F" to be the reference level
+sex_var <- factor(c("M", "M", "F", "F"), levels = c("F", "M"))
+# create vector with exposure levels - here we make "Ebar" the reference level
+exposure_var <- factor(c("E", "Ebar", "E", "Ebar"), levels = c("Ebar", "E"))
+# create vector with number of "successes" at each exposure level
+d_freq <- c(12, 6, 8, 9)
+# create vector with number of "failures" at each exposure level
+dbar_freq <- c(30, 5, 10, 30)
+# create the tibble
+example2_data <- tibble(sex_var, exposure_var, d_freq, dbar_freq)
+example2_data
+```
+
+## 3 Fitting GLMs
+
+We fit GLMs in R using the ``glm()`` function.  This function can fit a wide array of GLMs, including those for binary responses that we will focus on here.
+
+There are three main arguments for the ``glm()`` function:
+
+(1) **formula**: This is a symbolic description of the model to be fitted.   
+
+     (a) If you have *individual level* data, then the structure of the formula is: ``response variable ~ predictor 1 + predictor 2 + ... + predictor p``.   
+     
+     (b) If you have *group level* data, then the structure of the formula is: ``cbind(success_freq, failure_freq) ~ predictor 1 + predictor 2 + ... + predictor p``
+     
+
+(2) **family**: This is how we specify the random component and link function. For binary response GLMs, we will use the following family arguments:
+
+| **model**          | **family argument**        |  
+|:------------------:|:--------------------------:|   
+| logistic           | ``binomial(link = "logit")``   |  
+| linear probability | ``binomial(link = "identity")``|
+| log binomial       | ``binomial(link = "log")``     |
+
+(3) **data**: This is the tibble or data frame object that contains the response and predictor variables.
+
+The binary response variable should be coded as 0 = failure and 1 = success.  It can be either a numeric or a factor variable.  If your response variable is not in this format (coded as 0/1 AND either a numeric or factor variable) then you should create a new variable in your data set that does have this format and then use that as your response in the ``glm()`` function.  
+
+Running the ``glm()`` function creates a glm object.  It is good practice to store this as a named object in R.  It's also good practice to use descriptive (but short) names like ``logit_mod_ex01`` for glm objects.
+
+**Example 1. Individual level data**: Recall the HRS data set from the file mus14data.csv.  This data set has been loaded into R as a tibble called ``hrs_data``.  Let's use this data set to fit a logistic model with private supplemental medical insurance status (``private``) as the binary response and years of education (``educyear``) as the predictor. In the ``hrs_data`` tibble, ``private`` is coded as 1 for "has private supplemental insurance" and 0 for "does not have private supplemental insurance."  So, it has the correct format for being a binary response variable in the ``glm()`` function.  The ``educyear`` variable is a numeric variable with values 0, 1, ..., 17.
+
+The code chunk below shows how to fit the logistic model and print some information about the model.
+
+```{r logit01, exercise = TRUE, exercise.lines = 5}
+# the code below fits the model and stores it as a glm object called logit_mod_ex01
+logit_mod_ex01 <- glm(private ~ educyear, family = binomial(link = "logit"), data = hrs_data)
+# this will print some information about the fitted model
+logit_mod_ex01
+```
+
+The ``glm()`` function does a lot of work "behind the scenes."  ``logit_mod_ex01`` is an object that contains lots of elements (or "sub-objects") that provide information about the fitted model.  We will use some of these elements later.  For now, you can see what elements are included in the ``logit_mod_ex01`` object by using the ``str()`` function.  This function provides a partial view of all of the elements in an object.  
+
+Run the code chunk below to see a partial view of all of the elements in the ``logit_mod_ex01`` object.  **Be warned**, there's a ton of output.  Don't worry about understanding it.  Maybe just look at the names of the elements and just appreciate that a glm object contains lots of useful information.
+
+```{r prepare-logit01a}
+logit_mod_ex01 <- glm(private ~ educyear, family = binomial(link = "logit"), data = hrs_data)
+```
+
+```{r logit02, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+str(logit_mod_ex01)
+```
+
+<!-- If, instead of fitting a logistic model, you want to fit a linear probability model or log binomial model, you can use the code chunk below. -->
+<!-- ```{r altglms01, exercise = TRUE, exercise.lines = 5} -->
+<!-- # this fits a linear probability model - all we need to change is the link function -->
+<!-- lp_mod_ex01 <- glm(private ~ educyear, family = binomial(link = "identity"), data = hrs_data) -->
+<!-- # this fits a log binomial model - all we need to change is the link function -->
+<!-- lb_mod_ex01 <- glm(private ~ educyear, family = binomial(link = "log"), data = hrs_data) -->
+<!-- ``` -->
+
+
+**Example 2. Group level data**: Consider the group level data from the previous section.  Suppose that we want to fit a logistic regression model with disease status as the response ($D$, $\bar{D}$) and $x_1$ = exposure status ($E$, $\bar{E}$) as the predictor based on the data in the contingency table below.
+
+|           | $D$ | $\bar{D}$ |  
+|:---------:|:---:|:-------:|   
+| $E$       |20   | 40      |  
+| $\bar{E}$ |15   | 35      |
+
+```{r prepare-grplevdat}
+exposure_var <- factor(c("E", "Ebar"), levels = c("Ebar", "E"))
+d_freq <- c(20, 15)
+dbar_freq <- c(40, 35)
+example1_data <- tibble(exposure_var, d_freq, dbar_freq)
+```
+
+Recall that we created a tibble object called ``example1_data`` with this group level data in it.
+
+We can fit the logistic model using the group level data by running the code chunk below.
+
+```{r grplevdat01, exercise = TRUE, exercise.setup = "prepare-grplevdat", exercise.lines = 5}
+# the code below fits the model and stores it as a glm object called logit_mod_ex02
+logit_mod_ex02 <- glm(cbind(d_freq, dbar_freq) ~ exposure_var, family = binomial(link = "logit"), data = example1_data)
+# this will print some information about the fitted model
+logit_mod_ex02
+```
+
+If, instead of fitting a logistic model, you want to fit a linear probability model or log binomial model, you can use the code chunk below.
+```{r altglms01, exercise = TRUE, exercise.lines = 5}
+# this fits a linear probability model - all we need to change is the link function
+lp_mod_ex02 <- glm(cbind(d_freq, dbar_freq) ~ exposure_var, family = binomial(link = "identity"), data = example1_data)
+# this fits a log binomial model - all we need to change is the link function
+lb_mod_ex02 <- glm(cbind(d_freq, dbar_freq) ~ exposure_var, family = binomial(link = "log"), data = example1_data)
+```
+
+## 4 Handling Categorical Predictors
+
+### Binary Predictors
+
+Let's focus for a moment on the output from Exercise 2 in the previous section (printed below).
+
+```{r, echo = FALSE}
+exposure_var <- factor(c("E", "Ebar"), levels = c("Ebar", "E"))
+d_freq <- c(20, 15)
+dbar_freq <- c(40, 35)
+example1_data <- tibble(exposure_var, d_freq, dbar_freq)
+logit_mod_ex02 <- glm(cbind(d_freq, dbar_freq) ~ exposure_var, family = binomial(link = "logit"), data = example1_data)
+logit_mod_ex02
+```
+
+Notice that under where it says "Coefficients:" you can see the estimate for the intercept, under "(Intercept)", and the estimate for the slope of the ``exposure_var`` variable, under "exposure_varE."  That E that is attached to the end of the predictor name tells us that, in the process of fitting the GLM, R has internally recoded the ``exposure_var`` as 1 = E and 0 = Ebar (i.e., Ebar is being used as the reference level).  This means that the slope should be interpreted as a log odds ratio for disease comparing the E group to the Ebar group, as opposed to the other way around (i.e., comparing the Ebar group to the E group).  We actually ensured this would happen when we initially created the ``exposure_var``.  We did this by creating it as a factor variable and specified that Ebar was the reference level.  
+
+**Bottom line**: Pay attention to what is attached to the ends of the names of your categorical predictors in your glm object and be sure that you are clear about which level is the reference level for each categorical predictor.  If the reference level for a categorical predictor is not what you want, then you need to recode the variable in your tibble and rerun the ``glm()`` function with the updated coding.
+
+### k-Level Categorical Predictors and Dummy Variable Coding
+
+If your predictor corresponds to a categorical variable with $k$-levels ($k > 2$), the ``glm()`` function will automatically create a set of dummy variable predictors when it fits the model. 
+
+Let's go back to the HRS data again.  Suppose that we want to fit a logistic model with private supplemental medical insurance status (``private``) as the binary response and a 4-level categorical education predictor in which education is categorized as *10 years or less*, *11 - 12 years*, *13 - 14 years*, or *more than 14 years*.  Suppose that we want the reference level to be *10 years or less*.  We first need to create this variable and store it in the ``hrs_data`` tibble.
+
+The code chunk below creates the 4-level categorical education variable. Run the code for creating the variable as well as the code that creates a frequency table for the newly created variable. 
+
+```{r klevel01, exercise = TRUE, exercise.lines = 13}
+# this creates a variable called edu_4cat
+# one new bit of code is the %in% operator
+#  the bit of code educyear %in% c(11,12) checks if the educyear is equal to 11 or 12
+hrs_data <- 
+  hrs_data %>% 
+  mutate(edu_4cat = case_when(educyear < 11 ~ "10 years or less",
+                              educyear %in% c(11,12) ~ "11-12 years",
+                              educyear %in% c(13,14) ~ "13-14 years",
+                              educyear > 14 ~ "more than 14 years"),
+         edu_4cat = factor(edu_4cat, levels = c("10 years or less", "11-12 years", "13-14 years", "more than 14 years")))
+# this gives a frequency table for the edu_4cat - this is just for checking
+table(hrs_data$edu_4cat)
+```
+
+Now we can fit the logistic model with ``private`` as the response and ``educyear`` as the 4-level categorical predictor.
+
+The code chunk below shows how to fit the logistic model and print some information about the model.
+
+```{r, echo = FALSE}
+hrs_data <- 
+  hrs_data %>% 
+  mutate(edu_4cat = case_when(educyear < 11 ~ "10 years or less",
+                              educyear %in% c(11,12) ~ "11-12 years",
+                              educyear %in% c(13,14) ~ "13-14 years",
+                              educyear > 14 ~ "more than 14 years"),
+         edu_4cat = factor(edu_4cat, levels = c("10 years or less", "11-12 years", "13-14 years", "more than 14 years")))
+```
+
+```{r, echo = TRUE}
+# the code below fits the model and stores it as a glm object called logit_mod_klev
+logit_mod_klev <- glm(private ~ edu_4cat, family = binomial(link = "logit"), data = hrs_data)
+# this will print some information about the fitted model
+logit_mod_klev
+```
+
+Notice that in the output under where it says "Coefficients:" you can see the intercept estimate as well as slope estimates for the the 3 dummy variables that the ``glm()`` function created from your 4-level categorical ``edu_4cat`` predictor.  
+
+The 3 dummy variables that were created are:
+
+$$\verb+edu_4cat11-12 years+ = 
+    \begin{cases} 
+      1 & \text{if 11-12 years}\\
+      0 & \text{otherwise}
+    \end{cases}$$
+
+$$\verb+edu_4cat13-14 years+ = 
+    \begin{cases} 
+      1 & \text{if 13-14 years}\\
+      0 & \text{otherwise}
+    \end{cases}$$
+    
+$$\verb+edu_4catmore than 14 years+ = 
+    \begin{cases} 
+      1 & \text{if more than 14 years}\\
+      0 & \text{otherwise}
+    \end{cases}$$
+
+Notice that you don't see the level *10 years or less* appended to the ``edu_4cat`` variable name.  This means that *10 years or less* is the reference level (as expected).
+
+The table below shows the correspondence between the dummy variable coding and each of the 4-levels of the ``edu_4cat`` predictor.
+
+|                    | edu_4cat11-12 years | edu_4cat13-14 years | edu_4catmore than 14 years | 
+|:------------------:|:-------------------:|:-------------------:|:--------------------------:|   
+| 10 years or less   | 0                   | 0                   | 0                          |
+| 11-12 years        | 1                   | 0                   | 0                          |
+| 13-14 year         | 0                   | 1                   | 0                          |
+| more than 14 years | 0                   | 0                   | 0                          |
+
+## 5 Using ``glm`` Objects 
+
+In Section 3, we said that the ``glm()`` function does a lot of work "behind the scenes" and that glm objects contain lots of elements (or "sub-objects") that provide information about the fitted model.  Now we will see two useful functions for extracting information from these glm objects.  
+
+The first useful function is the ``summary()`` function.  We saw this function in the first R tutorial, but we were applying it directly to a tibble or to one variable from a tibble. If you apply the ``summary()`` function to a glm object then you will get back information about the estimated coefficients, their standard errors, and a whole host of other pieces of information.  
+
+In Section 3, we fit a logistic model with ``private`` as the binary response and ``educyear`` as the predictor and stored this as a glm object called ``logit_mod_ex01``.  Run the code chunk below to apply the ``summary()`` function to the ``logit_mod_ex01`` object and print the result.  
+```{r summ01, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+summary(logit_mod_ex01)
+```
+
+There is a good amount of useful information in this output, but if you want to focus on the coefficient table, then you can "pick it off" by using the following code.
+
+```{r summ02, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+summary(logit_mod_ex01)$coefficients
+```
+
+If you only want to see the estimated intercept and slope(s) then you can  simply apply the ``coef()`` function to the glm object.  The code below picks off and prints the the estimated intercept and slope from the ``logit_mod_ex01`` object. 
+
+```{r summ03, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+coef(logit_mod_ex01)
+```
+
+Recall that the estimated slope(s) in a logistic regression model correspond to log ORs.  If you want to obtain the estimated ORs, you can take antilogs by using the ``exp()`` function.  The code chunk below computes an estimated odds (corresponding to the intercept) and an estimated odds ratio (corresponding to the slope) using the ``logit_mod_ex01`` object.  
+
+```{r summ04, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+exp(coef(logit_mod_ex01))
+```
+
+We can also quickly compute confidence intervals for GLM parameters by using the ``confint.default()`` function.  The first argument to this function is the glm object and the second argument is ``level`` which must be a number between 0 and 1 corresponding to the confidence level.  
+
+The code chunk below computes 95\% confidence intervals for the intercept and slope using the ``logit_mod_ex01`` object.  The lower bound for each interval is given in the first column and the upper bound is given in the second column.
+
+```{r summ05, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+confint.default(logit_mod_ex01, level = 0.95)
+```
+
+Note that the confidence intervals generated by the code above are confidence intervals for the log odds (intercept) and log odds ratio (slope).  If you want the confidence intervals for the odds (intercept) and odds ratio (slope), you can simply apply the ``exp()`` function.  Run the code chunk below to obtain 95\% confidence intervals for the odds (intercept) and odds ratio (slope).
+
+```{r summ06, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+exp(confint.default(logit_mod_ex01, level = 0.95))
+```
+
+## 6 Obtaining Predicted Values 
+
+The last function that we will discuss in this tutorial is the ``predict()`` function.  This function can be used to obtain predicted values from glm objects.
+
+There are three main arguments for the ``predict()`` function:
+
+(1) **glm object**: This is the glm object created by the ``glm()`` function.   
+
+(2) **type**: This tells the function what type of prediction we want.  For the purposes of this course we will consider two options:
+
+     (a) ``type = "link"`` - this means that we want the values of the linear predictor to be returned.  For a logistic model, this corresponds to getting back the predicted log odds.  For a log binomial model, this corresponds to getting back the predicted log risks. For a linear probability model, this corresponds to getting back the predicted risks.
+     
+     (b) ``type = "response"`` - this means that we want the predicted values to be returned on the scale of the response.  For any GLM with a binary response, this corresponds to getting back the predicted probabilities.
+
+(3) **newdata**: This is an optional argument.  If you leave it out, then the ``predict()`` function will simply provide the predicted values for the observations that were in the data set (tibble) that was used to fit the model.  If you want to make a prediction for a new observation, then you have to create a new data set (tibble) with the all of the predictors in the GLM and their corresponding values for the new observation.   
+
+### Predictions for Observations Used to Fit the GLM
+
+**Example 1.** Recall again that in Section 3, we fit a logistic model with ``private`` as the binary response and ``educyear`` as the predictor and stored this as a glm object called ``logit_mod_ex01``.  The code below will compute and print the model-based predicted probabilities of having private supplemental insurance for all 3206 people with observations in the HRS data set.  Be warned, there is a lot of output since it will print all 3206 predicted probabilities.
+
+```{r pred01, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+predict(logit_mod_ex01, type = "response")
+```
+
+Looking at the predicted values can be particularly useful when you want to use a linear probability model.  Recall that this model has one major structural flaw, namely that it can produce predicted probabilities that are outside of the [0,1] range of acceptable values.  If you fit a linear probability model, you can check whether the predicted values (from the sample used to fit the model) are in the [0,1] range. If they are then you can feel justified in using the model.  Otherwise, you might want to consider not using it.  
+
+### Predictions for New Observations
+
+If you want to obtain a predicted value for a new observation or set of observations, you need to create a new tibble with predictor value(s) for each new observation that you want to predict.
+
+**Example 2.** Let's use the same fitted model as used in Example 1 above to find the predicted probability for a person with 12 years of education (i.e., ``educyear = 12``).  First, we need to create a new tibble (let's call it ``new_obs_data``) with the predictor for this new observation.  Then we include this new tibble in the ``newdata`` argument of the ``predict()`` function. 
+
+The code chunk below creates the new tibble and obtains the predicted probability based on the fitted logistic model.  
+
+```{r pred02, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 6}
+# create the new tibble
+new_obs_data <- tibble(educyear = 12)
+# obtain the predicted probability
+predict(logit_mod_ex01, type = "response", newdata = new_obs_data)
+```
+
+If we wanted to find the predicted probabilities for a person with 12 years of education and another person with 15 years of education we can use the code chunk below.
+
+```{r pred03, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 6}
+# create the new tibble
+new_obs_data <- tibble(educyear = c(12, 15))
+# obtain the predicted probabilities
+predict(logit_mod_ex01, type = "response", newdata = new_obs_data)
+```
+
+You need to make sure that your new tibble has variables that exactly match those used as predictors in the GLM.  This means that if you want to make a prediction based on a factor variable, then you need to specify it as a factor variable with the correct reference level in your new tibble object.  
+
+**Example 3.** Recall that in Section 4 we created a 4-level categorical education variable,``edu_4cat``, and fit a logistic regression model with ``private`` as the binary response and ``edu_4cat`` as the predictor.  We stored that model as a glm object called ``logit_mod_klev``.  Recall that ``edu_4cat`` was created as a factor variable with ``levels = c("10 years or less", "11-12 years", "13-14 years", "more than 14 years")``.  If we want to find the predicted probability of having private supplemental insurance for someone with 11-12 years of education then we use the code chunk below.
+
+```{r, echo = FALSE}
+logit_mod_klev <- glm(private ~ edu_4cat, family = binomial(link = "logit"), data = hrs_data)
+```
+
+```{r pred04, exercise = TRUE, exercise.lines = 6}
+# create the new tibble
+new_obs_data <- tibble(edu_4cat = factor("11-12 years", levels = c("10 years or less", "11-12 years", "13-14 years", "more than 14 years")))
+# obtain the predicted probabilities
+predict(logit_mod_klev, type = "response", newdata = new_obs_data)
+```
+
+## More Practice
+
+**Exercise 1.** Use the ``hrs_data`` tibble (you can assume this has been loaded) to fit a logistic model with private supplemental medical insurance status (``private``) as the binary response and annual household income (``hhincome``) as the predictor.  Note that ``hhincome`` is measured in thousands of dollars.  Use the ``summary()`` function to print a summary of the fitted model.
+
+```{r ex1, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex1-solution}
+logit_mod_mp01 <- glm(private ~ hhincome, family = binomial(link = "logit"), data = hrs_data)
+summary(logit_mod_mp01) 
+```
+
+```{r, echo = FALSE}
+logit_mod_mp01 <- glm(private ~ hhincome, family = binomial(link = "logit"), data = hrs_data)
+```
+
+**Exercise 2.** Use the glm object given in the solution to Exercise 1 to obtain the estimated odds for having private supplemental insurance among those with $0 annual household income and the estimated OR for having private supplemental insurance for a one-thousand dollar increase in annual household income.  Also provide 95\% CIs for these estimates.
+
+```{r ex2, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex2-solution}
+# taking antilogs of the model coefficients will give the desired odds and OR estimates
+exp(coef(logit_mod_mp01))
+# taking antilogs of the confidence interval bounds will give the desired CIs
+exp(confint.default(logit_mod_mp01))
+```
+
+**Exercise 3.** Use the glm object given in the solution to Exercise 1 to obtain the predicted probability of having private supplemental insurance for someone whose annual household income is $12,000 (note that this corresponds to hhincome = 12).
+
+```{r ex3, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex3-solution}
+# first make a new tibble with the hhincome value that will be used to predict
+new_data_obs <- tibble(hhincome = 12)
+# obtain the predicted probability for this new observation
+predict(logit_mod_mp01, type = "response", newdata = new_data_obs)
+```
+
+**Exercise 4.** Use the 2 x 2 table below (from a hypothetical cohort study) to generate a group level data set that can be used to fit a logistic regression model with cancer status status as the response and smoking status as the predictor. 
+
+|               | Cancer  | No Cancer |  
+|:-------------:|:-----:|:-------:|   
+| **Smoker**    |300    | 50      |  
+| **Non Smoker**|40     | 310     |
+
+```{r ex4, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex4-solution}
+smoke_var <- factor(c("Smoker", "Non Smoker"), levels = c("Non Smoker", "Smoker"))
+cancer_freq <- c(300, 40)
+nocancer_freq <- c(50,310)
+smoke_data <- tibble(smoke_var, cancer_freq, nocancer_freq)
+```
+
+```{r}
+smoke_var <- factor(c("Smoker", "Non Smoker"), levels = c("Non Smoker", "Smoker"))
+cancer_freq <- c(300, 40)
+nocancer_freq <- c(50,310)
+smoke_data <- tibble(smoke_var, cancer_freq, nocancer_freq)
+```
+
+**Exercise 5.** Use the data set that is given in the solution to Exercise 4 to fit a logistic model with cancer status as the response and smoking status as the predictor.  Then use the ``summary()`` function to get summary information about the fitted model. 
+
+```{r ex5, exercise = TRUE, exercise.lines = 4, message = FALSE}
+
+```
+
+```{r ex5-solution}
+logit_mod_ex05 <- glm(cbind(cancer_freq, nocancer_freq) ~ smoke_var, family = binomial(link = "logit"), data = smoke_data)
+summary(logit_mod_ex05)
+```
+
+**Exercise 6** Use the glm object given in the solution to Exercise 5 to obtain the estimated odds for cancer among the nonsmokers and the estimated OR for cancer comparing smokers to nonsmokers.  Also provide 95\% CIs for these estimates.
+
+```{r, echo = FALSE}
+logit_mod_ex05 <- glm(cbind(cancer_freq, nocancer_freq) ~ smoke_var, family = binomial(link = "logit"), data = smoke_data)
+```
+
+```{r ex6, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex6-solution}
+# taking antilogs of the model coefficients will give the desired odds and OR estimates
+exp(coef(logit_mod_ex05))
+# taking antilogs of the confidence interval bounds will give the desired CIs
+exp(confint.default(logit_mod_ex05))
+```
+
+
+**Exercise 7.** Use the data set that is given in the solution to Exercise 4 to fit a linear probability model with cancer status as the response and smoking status as the predictor.  Then use the ``summary()`` function to get summary information about the fitted model. 
+
+```{r ex7, exercise = TRUE, exercise.lines = 4, message = FALSE}
+
+```
+
+```{r ex7-solution}
+lp_mod_ex06 <- glm(cbind(cancer_freq, nocancer_freq) ~ smoke_var, family = binomial(link = "identity"), data = smoke_data)
+summary(lp_mod_ex06)
+```
+

@@ -1,0 +1,273 @@
+---
+title: "R Tutorial 11"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+library(DescTools)
+library(epiR)
+library(ResourceSelection)
+library(VGAM)
+# library(magick)
+# library(cowplot)
+knitr::opts_chunk$set(echo = FALSE)
+
+dat_url1 <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/SBI.csv")
+sbi_data <- tibble(read.csv(text = dat_url1))
+sbi_data <- 
+  sbi_data %>% 
+  filter(sbi != "NotApplicable")
+
+dat_url2 <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/arth_data.csv")
+arth_data <- tibble(read.csv(text = dat_url2))
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- How to compute probabilities of multinomial events.
+- How to fit and evaluate multinomial logistic models. 
+- How to create ordered factor variables.
+- How to fit and evaluate cumulative logistic and proportional odds models. 
+
+We will be using data from the study of bacterial infections among children in emergency rooms discussed in Lecture 11.  You can assume that this data set has been stored as a tibble object called ``sbi_data``.  The variables that we will use are:
+
+|Variable        |Levels                                         | Variable Class in R|
+|:--------------:|:---------------------------------------------:|:------------------:|   
+| ``sbi``        |Pneu = pneumonia                               | character          |
+|                |UTI = urinary tract infection                  |                    |
+|                |Bact = other bacterial infection               |                    |
+| ``age``        |age in years                                   | numeric            |
+| ``sex``        |M = male, F = female                           | character          |
+
+
+We will also be using data from the arthritis treatment study discussed in Lecture 11.  You can assume that this data set has been stored as a tibble object called ``arth_data``.  The table below defines the relevant variables.
+
+|Variable        |Levels                                         | Variable Class in R|
+|:--------------:|:---------------------------------------------:|:------------------:|   
+| ``improvement``|1 = a lot, 2 = some, 3 = none                  | numeric            |
+| ``trt``        |Active or Placebo                              | character          |
+| ``sex``        |Male or Female                                 | character          |
+
+## 2 Computing Multinomial Probabilities
+
+Consider a $J$-level categorical variable (e.g., genotype AA, Aa, or aa).  Let the probability of observing each level be denoted by $\pi_1, \ldots, \pi_J$.  If we collect data on this variable from $n$ independent trials, then the counts for each level, $(n_1, n_2, \ldots, n_J)$, follow a multinomial distribution: $Mult(n, (\pi_1, \ldots, \pi_J))$.  The probability of observing $(n_1, n_2, \ldots, n_J)$ is given by 
+
+$$P(n_1, n_2, \ldots, n_J) = \left(\frac{n!}{n_1!n_2! \cdots n_J!}\right) \pi_1^{n_1}\pi_2^{n_2} \cdots \pi_J^{n_J}$$ 
+
+We can use the ``dmultinom()`` function to compute probabilities for multinomial events.  
+
+The ``dmultinom()`` function has three arguments:  
+
+(1) The vector of counts for each level, created using the ``c()`` concatenate function.  
+
+(2) ``size`` = number of independent trials. 
+
+(3) ``prob`` = vector of probabilities of observing each level, created using the ``c()`` concatenate function.
+
+**Example**. Suppose that the genotypes AA, Aa, and aa occur with probabilities (0.25, 0.50, 0.25), respectively.  If we draw a random sample of 3 people, what is the probability of observing 2 with AA, 1 with Aa, and 0 with aa?  The code chunk below computes this probability.  
+
+```{r mp_01, exercise = TRUE, exercise.lines = 4}
+# note that we must enter the vector of counts for each level in the
+#  same order that we enter the probabilities for each level
+dmultinom(c(2, 1, 0), size = 3, prob = c(0.25, 0.50, 0.25))
+```
+
+## 3 Baseline-Category Logit Models
+
+The baseline-category (BC) logistic model can be used to model multinomial responses as a function of one or multiple predictors.  We can use the ``vglm()`` function from the VGAM package in R to fit these models.  Be sure to install and load this package on your own computer before trying to use the ``vglm()`` function.  You can assume that the package is loaded here.
+
+Before we talk about the ``vglm()`` function, let's first discuss a good R practice to use before fitting a BC logistic model.  It is always a good idea to format the variables in a data set in a manner that is suitable for analysis.  A multinomial response variable should be converted to a factor variable with the levels specified as desired.  When you specify the levels using the ``levels`` argument of the ``factor()`` function, the order that you enter the levels (i.e., 1st, 2nd, 3rd, etc...) will correspond to the numerical values that are assigned to the levels by the ``vglm()`` function when you fit a multinaomial model.
+
+**Example**.  Consider the bacterial infection data set.  Suppose that we want to fit a BC logistic model with type of bacterial infection (``sbi``) as the multinomial response.  Before fitting the model, we should make sure that the variable ``sbi`` is coded as a factor variable.  To control the numerical values that the ``vglm()`` function will assign to the response level, we will explicitly state the levels when we convert ``sbi`` to a factor variable.  The code chunk below converts ``sbi`` to a factor variable (called ``sbi_fac``) such that ``Pneu`` will be treated as level 1, ``UTI`` will be treated as level 2, and ``Bact`` will be treated as level 3.  Then, a table with the counts in each level is computed.    
+
+```{r bcl_01, exercise = TRUE, exercise.lines = 9}
+# create sbi_fac variable
+sbi_data <- 
+  sbi_data %>% 
+  mutate(sbi_fac = factor(sbi, levels = c("Pneu", "UTI", "Bact")))
+# obtain table with counts in each level for both the original 
+#  sbi variable and the new sbi_fac variable (for checking) 
+table(sbi_data$sbi) # order for original sbi variable
+table(sbi_data$sbi_fac) # this order is what we want
+```
+
+```{r prepare-bcl_resp}
+sbi_data <- 
+  sbi_data %>% 
+  mutate(sbi_fac = factor(sbi, levels = c("Pneu", "UTI", "Bact")))
+```
+
+We now move on to fitting a BC logistic model with the ``vglm()`` function.  The ``vglm()`` function has arguments that are similar to the arguments for the ``glm()`` function that we have been using to fit binary logistic regression models.  The arguments are:
+
+(1) **formula**: This is a symbolic description of the model to be fitted.  
+
+     (a) If you have *individual level* data, then the structure of the formula is: ``response variable ~ x_1 + x_2 + ... + x_p``.   
+     
+     (b) If you have *group level* data, then the structure of the formula is: ``cbind(level1_freq, level2_freq, ..., levelJ_freq) ~ x_1 + x_2 + ... + x_p``
+     
+(2) **family**: This is how we specify the random component and link function. For multinomial response GLMs, we will use ``family = multinomial(refLevel = J)``.  Note that in the ``multinomial()`` function, we can specify which level we want to have as the baseline category.      
+
+(3) **data**: This is the tibble or data frame object that contains the response and predictor variables.
+
+**Example**.  Fit a BC logistic model with ``sbi_fac`` as the multinomial response and age as the predictor.  Let ``Bact`` be the baseline category to which we compare the other levels of the response.  The code chunk below fits this model. Note that we specify ``refLevel = 3`` inside the ``multinomial()`` function in order to ensure that ``Bact`` (which we specified as the 3rd response level when we created the ``sbi_fac`` variable) is treated as the baseline category. Run the code to see the model estimates and statistics.  
+
+```{r bcl_02, exercise = TRUE, exercise.setup = "prepare-bcl_resp", exercise.lines = 5}
+# fit the BC model
+bcl_mod01 <- vglm(sbi_fac ~ age, family = multinomial(refLevel = 3), data = sbi_data)
+# look at parameter estimates and statistics
+summary(bcl_mod01)
+```
+
+Look at the output from the code chunk above.  Notice that there are multiple intercepts and slopes corresponding to the $(J-1)$ **baseline-category** logistic equations that comprise the BC logistic model.  The numerical values attached to the intercept and slope descriptions in the first column of the coefficient table provide information on which estimates correspond to each of the $(J-1)$ logistic equations.  This can be confusing if you are not clear on how the response variable is coded.  In our case, the response variable is ``sbi_fac`` and we explicitly set the levels ourselves.  So, we know that the rows of the summary table with suffix 1 correspond to the logistic equation comparing ``Pneu`` (level 1) vs. ``Bact`` (level 3) and the rows of the summary table with suffix 2 correspond to the logistic equation comparing ``UTI`` (level 2) vs. ``Bact`` (level 3).  The summary output also reminds us of this in the line of output that says: ``Names of linear predictors: log(mu[,1]/mu[,3]), log(mu[,2]/mu[,3])``.   
+
+Once you fit your BC logistic model with the ``vglm()`` function, you can use other functions on the resulting vglm object such as the ``summary()`` function (as shown above) and the ``lrtest_vglm()`` function that is used the same way that the ``lrtest()`` function (from the lmtest package) is used to conduct likelihood ratio tests.  
+
+## 4 Ordered Factor Variables
+
+If a multicategory variable is ordinal and you plan to conduct an analysis that utilizes the ordinal nature of this variable, then it makes sense to convert the variable to an ordered factor.  This can be done by using the ``factor()`` function with the ``ordered = TRUE`` argument included.  With ``ordered = TRUE``, when you specify the levels, the order in which you enter the levels will correspond to the order of the levels.   
+
+**Example**.  Consider the ``improvement`` variable from the arth_data tibble.  Since this variable is coded with the values 1 (a lot), 2 (some), and 3 (none) in the original csv file, when the data file gets read into R, this variable will be treated as a numerical variable.  If we want to convert it to an ordered factor variable, we use the code below.  Rather than overwriting the original ``improvement`` variable, we will create a new variable that is an ordered factor variable.      
+
+```{r ord_01, exercise = TRUE, exercise.lines = 7}
+# create improvement_ord variable and store in the arth_data tibble
+arth_data <- 
+  arth_data %>% 
+  mutate(improvement_ord = factor(improvement, ordered = TRUE, levels = c(1,2,3)))
+# look at the improvement_ord variable
+arth_data$improvement_ord
+```
+
+```{r prepare-ord}
+arth_data <- 
+  arth_data %>% 
+  mutate(improvement_ord = factor(improvement, ordered = TRUE, levels = c(1,2,3)))
+```
+
+Notice that when you print out the values of the ``improvement_ord`` variable, the levels are listed as ``Levels: 1 < 2 < 3``.  This shows us that R views this variable as an ordered factor.  If we were to have used the ``factor()`` function without the ``ordered = TRUE`` argument, then you would see ``Levels: 1  2  3`` without the ``<`` signs.   See for yourself by editing the code chunk above.
+
+## 5 Cumulative and PO Logisitic Models
+
+The cumulative logistic model can be used to model ordinal multicategory responses as a function of one or multiple predictors.  The proportional odds model is a special case of the cumulative logistic model.  As with the BC logistic model that we discussed in Section 3, we can use the ``vglm()`` function to fit both the general cumulative logistic model as well as the proportional odds model.       
+
+As when using the ``vglm()`` function to fit the BC model, with ordinal response models, you must be aware of the coding of your ordinal response variable.  If you make it a habit to always convert your ordinal response variable to an ordered factor variable (as seen in Section 4), you should not have any issues.    
+
+The formula and data arguments we use to fit the general cumulative logistic model or the proportional odds model are similar to those that we discussed for fitting BC logistic model.  The main difference is the ``family`` argument.  
+
+To fit a general cumulative logistic model, we specify ``family = cumulative(parallel = FALSE)``.  
+
+To fit a proportional odds logistic model, we specify ``family = cumulative(parallel = TRUE)``.   
+
+**Example**. Using the data from the arth_data tibble, fit a cumulative logistic regression model with improvement as the ordinal response and treatment as the only predictor. The code chunk below fits this model, stores it as a vglm object, and then prints a summary of the fitted model.     
+
+```{r ord_02, exercise = TRUE, exercise.setup = "prepare-ord", exercise.lines = 6}
+# fit the cumulative logistic model
+clmod_01 <- vglm(improvement_ord ~ trt, family = cumulative(parallel = FALSE), data = arth_data)
+# look at model coefficients and statistics
+summary(clmod_01)
+```
+
+Look at the output from the code chunk above.  Notice that there are multiple intercepts and slopes corresponding to the $(J-1)$ **cumulative** logistic equations that comprise the cumulative logistic model.  The numerical values attached to the intercept and slope descriptions in the first column of the coefficient table provide information on which estimates correspond to each of the $(J-1)$ logistic equations.  This can be confusing if you are not clear on how the response variable is coded.  In our case, the response variable is ``improvement_ord`` and we explicitly set the levels ourselves.  So, we know that the rows of the summary table with suffix 1 correspond to the logistic equation comparing level 1 (a lot) vs. levels 2 or 3 (some or none) and the rows of the summary table with suffix 2 correspond to the logistic equation comparing levels 1 or 2 (a lot or some) vs. level 3 (none).  The summary output also reminds us of this in the line of output that says: ``Names of linear predictors: logitlink(P[Y<=1]), logitlink(P[Y<=2])``.  There are two slopes because this model does not make the proportional odds assumption that the slope for each variable is the same across the $(J-1)$ logistic equations.  
+
+**Example**. Using the data from the arth_data tibble, fit a proportional odds logistic regression model with improvement as the ordinal response and treatment as the only predictor. The code chunk below fits this model, stores it as a vglm object, and then prints a summary of the fitted model.
+
+```{r ord_03, exercise = TRUE, exercise.setup = "prepare-ord", exercise.lines = 6}
+# fit the proportional odds logistic model
+pomod_01 <- vglm(improvement_ord ~ trt, family = cumulative(parallel = TRUE), data = arth_data)
+# look at model coefficients and statistics
+summary(pomod_01)
+```
+
+Look at the output from the code chunk above.  The structure of the output is nearly identical to the structure of the output for the cumulative logistic model that we fit in the prevuious code chunk.  The main difference is that, for the proportional odds model, there is only one slope that is assumed to be the same for each of the cumulative logistic equations.  
+
+Once you fit your cumulative logistic or proportional odds model with the ``vglm()`` function, you can use other functions on the resulting vglm object such as the ``summary()`` function (as shown above) and the ``lrtest_vglm()`` function that is used the same way that the ``lrtest()`` function (from the lmtest package) is used to conduct likelihood ratio tests. 
+
+## More Practice
+
+**Exercise 1.** Suppose that the blood types A, B, AB, and O occur with probabilities (0.42, 0.10, 0.04, 0.44), respectively. If we draw a random sample of 100 people, what is the probability of observing 35 with A, 15 with B, 2 with AB, and 48 with O?         
+
+```{r ex1, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex1-solution}
+# use the dmultinom function
+dmultinom(c(35, 15, 2, 48), size = 100, prob = c(0.42, 0.10, 0.04, 0.44))
+```
+
+**Exercise 2.** Use the sbi_data tibble to fit a BC logistic model with ``sbi_fac`` as the response and with both age and sex as predictors.  Let ``Bact`` be the baseline category.   
+
+```{r ex2, exercise = TRUE, exercise.lines = 7, exercise.setup = "prepare-bcl_resp"}
+
+```
+
+```{r ex2-solution}
+# fit the BC model
+bcl_mod02 <- vglm(sbi_fac ~ age + sex, family = multinomial(refLevel = 3), data = sbi_data)
+# look at parameter estimates and statistics
+summary(bcl_mod02)
+```
+
+**Exercise 3.** Redo Exercise 2, but this time, let ``UTI`` be the baseline category.   
+
+```{r ex3, exercise = TRUE, exercise.lines = 7, exercise.setup = "prepare-bcl_resp"}
+
+```
+
+```{r ex3-solution}
+# fit the BC model - we need to set refLevel = 2 since this corresponds to UTI for sbi_fac
+bcl_mod03 <- vglm(sbi_fac ~ age + sex, family = multinomial(refLevel = 2), data = sbi_data)
+# look at parameter estimates and statistics
+summary(bcl_mod03)
+```
+
+**Exercise 4.** Using the bacterial infection data, conduct a likelihood ratio test (using the ``lrtest_vglm()`` function) to test the null hypothesis that sex is not associated with type of infection, adjusting for age.
+
+```{r ex4, exercise = TRUE, exercise.lines = 7, exercise.setup = "prepare-bcl_resp"}
+
+```
+
+```{r ex4-solution}
+# this requires us to fit the full BC logistic model with 
+#  age and sex and compare it to the reduced BC logistic 
+#  with only age; we will fit both here for completeness
+
+# full model
+bcl_mod02 <- vglm(sbi_fac ~ age + sex, family = multinomial(refLevel = 3), data = sbi_data)
+# reduced model
+bcl_mod01 <- vglm(sbi_fac ~ age, family = multinomial(refLevel = 3), data = sbi_data)
+# obtain LRT statistics 
+lrtest_vglm(bcl_mod02, bcl_mod01)
+```
+
+**Exercise 5.** Use the arth_data tibble to fit a cumulative logistic model with ``improvement_ord`` as the response and with both treatment and sex as predictors.
+
+```{r ex5, exercise = TRUE, exercise.lines = 7, exercise.setup = "prepare-ord"}
+
+```
+
+```{r ex5-solution}
+# fit the cumulative logistic model
+clmod_02 <- vglm(improvement_ord ~ trt + sex, family = cumulative(parallel = FALSE), data = arth_data)
+# look at model coefficients and statistics
+summary(clmod_02)
+```
+
+**Exercise 6.** Use the arth_data tibble to fit a proportional odds logistic model with ``improvement_ord`` as the response and with both treatment and sex as predictors.
+
+```{r ex6, exercise = TRUE, exercise.lines = 7, exercise.setup = "prepare-ord"}
+
+```
+
+```{r ex6-solution}
+# fit the proportional odds logistic model
+pomod_02 <- vglm(improvement_ord ~ trt + sex, family = cumulative(parallel = TRUE), data = arth_data)
+# look at model coefficients and statistics
+summary(pomod_02)
+```

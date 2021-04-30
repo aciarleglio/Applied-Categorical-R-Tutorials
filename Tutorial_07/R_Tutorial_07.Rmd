@@ -1,0 +1,266 @@
+---
+title: "R Tutorial 07"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+library(gmodels)
+library(epiR)
+library(Exact)
+library(DescTools)
+library(lmtest)
+library(emmeans)
+knitr::opts_chunk$set(echo = FALSE)
+
+dat_url <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/mdd_cbt_data.csv")
+mdd_cbt_data <- tibble(read.csv(text = dat_url))
+mdd_cbt_data <- 
+  mdd_cbt_data %>% 
+  mutate(cbt = factor(cbt, levels = c(0,1)),
+         onset_age = factor(onset_age, levels = c(0,1)))
+
+dat_url2 <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/endo_data.csv")
+endo_data <- tibble(read.csv(text = dat_url2))
+endo_data <- 
+  endo_data %>% 
+  mutate(BMI = factor(BMI, levels = c("BMI < 25", "BMI 25-29", "BMI >= 30")),
+         HRT = factor(HRT, levels = c("never", "cont_comb")))
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- How to fit GLMs with interaction terms.
+- How use functions in the emmeans package to assess effect modification.
+
+We will be using two of the data sets described in Lecture 07.  
+
+The first data set contains data from a hypothetical trial of cognitive behavioral therapy (CBT) vs. placebo for treatment of major depressive disorder (MDD).  You can assume that this data set has been stored as a tibble object called ``mdd_cbt_data``.  The variables that we will use in the following sections are:
+
+|Variable           |Levels                                                 | Variable Class in R|
+|:-----------------:|:-----------------------------------------------------:|:------------------:|   
+| ``remit``         |1 = remitter, 0 = non remitter                         | numeric            |
+| ``cbt``           |1 = CBT, 0 = placebo (ref. level)                      | factor             |
+| ``onset_age``     |1 = MDD onset age >= 30, 0 = MDD onset age < 30 (ref. level) | factor             |
+| ``onset_age_num`` |MDD onset age years                                    | numeric            |
+
+The second data set contains data from a hypothetical ovservational study (with one observation per row) on postmenopausal women aged 50–64 and includes information on hormone replacement therapy (HRT).  You can assume that this data set has been stored as a tibble object called ``endo_data``.  The variables that we will use in the following sections are:
+
+|Variable           |Levels                    | Variable Class in R|
+|:-----------------:|:------------------------:|:------------------:|   
+| ``HRT``       |cont_comb = continuous/combined HRT, never = never used HRT |  factor |
+| ``cancer``    |1 = enodmetiral cancer, 0 = no cancer (ref. level) | numeric |
+| ``BMI``       |BMI < 25 (ref. level), BMI 25-29, BMI >= 30  | factor |
+
+## 2 Adding Interaction Terms
+
+Adding interaction terms to a GLM is simple.  All one needs to do is include the main effect terms and the product of the main effect terms in the formula argument of the GLM.  
+
+The code chunk below fits the logistic model with remitter status as the outcome and with therapy type, binary age of MDD onset, and the product of the therapy type and age of MDD onset variables.  Run the code and investigate the output.  
+
+```{r inter01, exercise = TRUE, exercise.lines = 5}
+inter_mod_01 <- glm(remit ~ cbt + onset_age + cbt*onset_age, 
+                    family = binomial(link = "logit"), data = mdd_cbt_data)
+summary(inter_mod_01)
+```
+
+In the example code above, ```onset_age``` is a binary variable.  When the effect modifier is not binary, but is a factor variable, one can use the same format for the formula when fitting a model with interaction terms.  
+
+The code chunk below fits the logistic model with endometrial cancer status as the outcome and with hormone replacement therapy use, BMI category, and the product of hormone replacement therapy use and each dummy variable associated with the BMI factor variable.  Run the code and investigate the output.  
+
+```{r inter02, exercise = TRUE, exercise.lines = 5}
+inter_mod_02 <- glm(cancer ~ HRT + BMI + HRT*BMI, 
+                    family = binomial(link = "logit"), data = endo_data)
+summary(inter_mod_02)
+```
+
+Notice that R knows to take the product of the binary ``HRT`` variable with each of the 2 dummy variables associated with the ``BMI`` variable.  
+
+## 3 Using the emmeans Package
+
+The emmeans package contains a versatile collection of functions that can help us make sense of fitted glm objects in R.  These functions are especially useful when dealing with models that include interaction terms.  Here we will focus on three of the functions from the package: ``emmeans()``, ``contrast()``, and ``emmip()``.   
+
+On your own computer, be sure to install and then load the emmeans package before trying to use any of its functions.  You may assume that the package has been loaded here.    
+
+Many of the functions in the emmeans package take as their first argument an emmGrid object.  An emmGrid object can be created from the ``emmeans()`` function.  For our purposes here, we can think of an emmGrid object as an object that contains information about a fitted glm object and instructions about which associations to estimate.    
+
+
+Suppose that $X$ is the primary exposure of interest and $Z$ is the effect modifier of the association between $X$ and the response $Y$.  Also suppose that we have fit a logistic model with the main effect and interaction terms corresponding to $X$ and $Z$ and stored this as a glm object called ``logit_mod``.   
+
+### When $Z$ is Binary or $k$-level Categorical
+
+The arguments for the ``emmeans()`` function are as follows:  
+
+(1) The first argument is a glm object.  This is ``logit_mod``.  
+(2) The second argument is a formula that specifies the primary exposure variable for which we want the estimated effects and the effect modifier that we want the estimated effects to be separated by.  Using the notation from the paragraph above, the form of this formula is ``~ X | Z``.
+
+Let's go back to the CBT vs. placebo example from the previous section.  The code chunk below sets up the emmGrid object that we will use to obtain the estimated effects of CBT therapy at each level of MDD onset age based on the ``inter_mod_01`` glm object that we created in the previous section.  For this example, $X = \mathtt{cbt}$ and $Z = \mathtt{onset\_age}$.  This emmGrid object is stored as an object called ``inter_mod_01_emm``.  Run the code below, then look at the emmGrid object that you created.  
+
+```{r prepare-logit01a}
+inter_mod_01 <- glm(remit ~ cbt + onset_age + cbt*onset_age, 
+                    family = binomial(link = "logit"), data = mdd_cbt_data)
+```
+
+```{r emmeans01, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+inter_mod_01_emm <- emmeans(inter_mod_01, ~ cbt | onset_age)
+```
+
+```{r emmeans01-solution}
+inter_mod_01_emm
+```
+
+Notice that the emmGrid object ``inter_mod_01_emm`` contains information about the predicted log odds of being a remitter at each therapy and onset age combination.  This information can be useful on its own.
+
+Once we have created an emmGrid object, we can use the ``contrast()`` function on that object in order to obtain the estimated associations (effects), tests, and confidence intervals of interest.  
+
+There are 5 arguments for the ``contrast()`` function that we will focus on here:  
+
+(1) The first argument is an emmGrid object.  For the example above, this would be ``inter_mod_01_emm``. 
+(2) The second argument is the contrast "method" argument.  By specifying the contrast method, we tell the function how we want to compute the association of interest.  There are many contrast methods to choose from (feel free to look at he help menu for the ``contrast()`` function to see them), but for our purposes, when $X$ is a categorical variable (either binary or $k$-level), we will always use ``"consec"`` as the contrast method.  You can simply put this expression in the second argument place.  
+(3) The third argument is the optional "name" argument.  It is used to override the default name that will be given to the association that you are computing.  It is used to make the output more readable.  For our purposes, it makes sense to set this name argument to the name of the exposure variable.   
+(4) The fourth argument is the "infer" argument.  Setting ``infer = c(TRUE, TRUE)`` tells the ``contrast()`` function that we want both hypothesis test information and confidence interval information.  
+(5) The fifth argument is the "level" argument.  This is used to specify the level of the confidence intervals to be estimated.  
+
+Again, let's go back to the CBT vs. placebo example from the previous section.  The code chunk below takes the emmGrid object, ``inter_mod_01_emm``, created above and computes the log odds ratio for remission comparing those on CBT to those on placebo separately for each MDD onset age group ($\ge$ 30 and < 30).  It computes the corresponding test statistics, p-values, and 95\% confidence intervals as well.  Run the code and investigate the output.
+
+```{r prepare-logit01b}
+inter_mod_01 <- glm(remit ~ cbt + onset_age + cbt*onset_age, 
+                    family = binomial(link = "logit"), data = mdd_cbt_data)
+inter_mod_01_emm <- emmeans(inter_mod_01, ~ cbt | onset_age)
+```
+
+```{r emmeans02, exercise = TRUE, exercise.setup = "prepare-logit01b", exercise.lines = 4}
+contrast(inter_mod_01_emm, method = "consec", name = "cbt",
+         infer = c(TRUE, TRUE), level = 0.95)
+```
+
+Another useful function is the ``emmip()`` function (emmip stands for **e**stimated **m**arginal **m**eans **i**nteraction **p**lot).  We can use this function to plot the log odds of response for each combination of the $X$ and $Z$ variables.  The arguments for this function are exactly the same as the arguments for the ``emmeans()`` function.  
+
+The code chunk below plots the log odds of response for each combination of the CBT (1 = CBT, 0 = placebo) and MDD onset age (1 = onset age $\ge$ 30, 0 = onset age < 30) variables based on the fitted model stored in the ``inter_mod_01`` glm object.  Run the code to obtain the plots.  
+
+```{r emmeans03, exercise = TRUE, exercise.setup = "prepare-logit01b", exercise.lines = 3}
+emmip(inter_mod_01, ~ cbt | onset_age)
+```
+
+### When $Z$ is Numerical
+
+When the effect modifier $Z$ is numerical, it's usually not possible to compute the association between $X$ and $Y$ at every level of $Z$.  Often, we select a few representative values of $Z$ and compute the association between $X$ and $Y$ at each of these values of $Z$.  We can do this using the optional "at" argument in both the ``emmeans()`` and ``emmip()`` functions described above.  
+
+Consider the CBT vs. placebo example again.  This time, we will use the numerical variable ``onset_age_num`` as the effect modifier corresponding to age of MDD onset measured in years.  Suppose that we want to estimate the effect of CBT therapy vs. placebo for MDD onset ages of 20, 30, and 40 years old.
+
+First, fit the logistic model.  The code below does this and stores the glm object as ``inter_mod_03``.
+
+```{r emmeans04, exercise = TRUE, exercise.lines = 4}
+inter_mod_03 <- glm(remit ~ cbt + onset_age_num + cbt*onset_age_num, 
+                    family = binomial(link = "logit"), data = mdd_cbt_data)
+```
+
+Next, set up the emmGrid object that specifies the levels of ``onset_age_num`` at which we want to estimate the effect of the ``cbt`` variable.  The code chunk below does this by including the "at" argument in the ``emmeans()`` function.  To specify the levels of $Z$ at which we want to estimate the effect of $X$ on $Y$, we use ``at = list(Z = c(Z value 1, Z value 2, ...)) ``.  Run the code below to create the emmGrid object then investigate this object.   
+
+```{r prepare-logit01c}
+inter_mod_03 <- glm(remit ~ cbt + onset_age_num + cbt*onset_age_num, 
+                    family = binomial(link = "logit"), data = mdd_cbt_data)
+```
+
+```{r emmeans05, exercise = TRUE, exercise.setup = "prepare-logit01c", exercise.lines = 5}
+inter_mod_03_emm <- emmeans(inter_mod_03, ~ cbt | onset_age_num, 
+                            at = list(onset_age_num = c(20, 30, 40)))
+```
+
+```{r emmeans05-solution}
+inter_mod_03_emm
+```
+
+As in the case when $Z$ is categorical, the ``inter_mod_03_emm`` object contains information about the predicted log odds of being a remitter at each therapy and onset age combination.
+
+To estimate the association(s) of interest, we can simply use the ``inter_mod_03_emm`` object as the first argument of the ``contrast()`` function, keeping all of the other arguments the same as we had above.  Run the code below and investigate the output.  
+
+```{r prepare-logit01d}
+inter_mod_03 <- glm(remit ~ cbt + onset_age_num + cbt*onset_age_num, 
+                    family = binomial(link = "logit"), data = mdd_cbt_data)
+inter_mod_03_emm <- emmeans(inter_mod_03, ~ cbt | onset_age_num, 
+                            at = list(onset_age_num = c(20, 30, 40)))
+```
+
+```{r emmeans06, exercise = TRUE, exercise.setup = "prepare-logit01d", exercise.lines = 4}
+contrast(inter_mod_03_emm, method = "consec", name = "cbt",
+         infer = c(TRUE, TRUE), level = 0.95)
+```
+
+Plots of the log odds of being a remitter can be obtained using the ``emmip()`` function as well.  We simply need to add the ``at`` argument as we did in the ``emmeans()`` function above.  
+
+Run the code below to obtain the plots of the log odds of being a remitter for each therapy group at MDD onset ages of 20, 30 and 40.  
+
+```{r emmeans07, exercise = TRUE, exercise.setup = "prepare-logit01d", exercise.lines = 4}
+emmip(inter_mod_03_emm, ~ cbt | onset_age_num, 
+      at = list(onset_age_num = c(20, 30, 40)))
+```
+
+
+## More Practice
+
+**Exercise 1.** Use the glm object ``inter_mod_02``, created in Section 2, to find the log odds ratios for developing endometrial cancer comparing those who used hormone replacement therapy (``HRT`` = $\mathtt{cont\_comb}$) to those who did not (``HRT`` = $\mathtt{never}$) for each level of BMI.  Include the 99\% confidence intervals.  
+
+```{r prepare-ex01}
+inter_mod_02 <- glm(cancer ~ HRT + BMI + HRT*BMI, 
+                    family = binomial(link = "logit"), data = endo_data)
+```
+
+```{r ex1, exercise = TRUE, exercise.setup = "prepare-ex01", exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex1-solution}
+# first create the emmGrid object
+inter_mod_02_emm <- emmeans(inter_mod_02, ~ HRT | BMI) 
+# then compute the association of interest
+contrast(inter_mod_02_emm, method = "consec", name = "HRT",
+         infer = c(TRUE, TRUE), level = 0.99)
+```
+
+**Exercise 2.** Use the glm object ``inter_mod_02`` to plot the estimated log odds of developing endometrial cancer for those who used HRT and those who never used HRT, separated by BMI level.  
+
+```{r ex2, exercise = TRUE, exercise.setup = "prepare-ex01", exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex2-solution}
+emmip(inter_mod_02, ~ HRT | BMI) 
+```
+
+**Exercise 3.** Use the glm object ``inter_mod_03`` to find the log odds ratios for being a remitter comparing those in the CBT group (``cbt`` = 1) to those in the placebo group (``cbt`` = 0) for those with MDD onset ages of 25 and 55.  Include the 90\% confidence intervals.
+
+```{r prepare-ex03}
+inter_mod_03 <- glm(remit ~ cbt + onset_age_num + cbt*onset_age_num, 
+                    family = binomial(link = "logit"), data = mdd_cbt_data)
+```
+
+```{r ex3, exercise = TRUE, exercise.setup = "prepare-ex03", exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex3-solution}
+# first create the emmGrid object
+inter_mod_03ex3_emm <- emmeans(inter_mod_03, ~ cbt | onset_age_num, 
+                               at = list(onset_age_num = c(25, 55))) 
+# then compute the association of interest
+contrast(inter_mod_03ex3_emm, method = "consec", name = "cbt",
+         infer = c(TRUE, TRUE), level = 0.90)
+```
+
+**Exercise 4.** Use the glm object ``inter_mod_03`` to plot the estimated log odds of being a remitter for those in the CBT group and those in the placebo group, separated by MDD onset ages 25, 35, 45, and 55.  
+
+```{r ex4, exercise = TRUE, exercise.setup = "prepare-ex03", exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex4-solution}
+emmip(inter_mod_03, ~ cbt | onset_age_num, 
+      at = list(onset_age_num = c(25, 35, 45, 55))) 
+```

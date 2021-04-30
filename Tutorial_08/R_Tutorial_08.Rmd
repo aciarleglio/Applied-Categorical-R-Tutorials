@@ -1,0 +1,136 @@
+---
+title: "R Tutorial 08"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+library(gmodels)
+library(epiR)
+library(Exact)
+library(DescTools)
+library(lmtest)
+library(emmeans)
+library(Stat2Data)
+knitr::opts_chunk$set(echo = FALSE)
+
+set.seed(12345)
+age <- round(runif(n = 1500, min = 0, max = 95), 2)
+lp <- 0.0011*(age - 48)^2
+pr <- exp(lp) / (1 + exp(lp))
+death <- rbinom(n = 1500, size = 1, prob = pr)
+age_death_data <- data.frame(age, death)
+
+set.seed(123)
+weight <- runif(1000, min = 120, max = 250)
+diabetes_lp <-  -4.5 + 0.0006*(weight - 130)^2 
+diabetes_pr <- exp(diabetes_lp) / (1 + exp(diabetes_lp))
+diabetes <- rbinom(1000, size = 1, prob = diabetes_pr)
+diabetes_data <- tibble(diabetes, weight)
+
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- How to construct an empirical logit plot for a numerical predictor.
+- How to create centered and standardized variables.
+
+We will be using simulated data from a hypothetical study of age and risk of death from Lecture 08.  You can assume that this data set has been stored as a tibble object called ``age_death_data``.  The variables that we will use are:
+
+|Variable           |Levels                             | Variable Class in R|
+|:-----------------:|:---------------------------------:|:------------------:|   
+| ``death``         |1 = dead, 0 = alive                | numeric            |
+| ``age``           |age in years                       | numeric            |
+
+## 2 Empirical Logit Plots
+
+An empirical logit plot is easy to construct using the ``emplogitplot1()`` function from the Stat2Data package.  Be sure to install and load the Stat2Data package on your computer before you try to use the ``emplogitplot1()`` function.  
+
+The ``emplogitplot1()`` function takes three arguments:  
+
+(1) A formula specifying the binary response and the numerical predictor.  If $Y$ is the binary response and $X$ is the numerical predictor then the formula argument should be written as ``Y ~ X``.  
+
+(2) ``data``: The data frame/tibble object that contains the response and predictor variables.  
+
+(3) ``ngroups``: The number of intervals that the numerical predictor should be split into.  If you select, for example, ``ngroups = 5``, then the ``emplogitplot1()`` function will categorize the numerical predictor into 5 levels (intervals) with approximately the same number of observations in each level (interval), (i.e., 20\% of the observations fall in each level when ``ngroups = 5``).      
+
+The code below constructs an empirical logit plot of age vs. the log odds of death using data in the ``age_death_data`` tibble object. It categorizes the age variable into 10 intervals.  Run the code to obtain the empirical logit plot.  
+
+```{r elp01, exercise = TRUE, exercise.lines = 4}
+emplogitplot1(death ~ age, data = age_death_data, ngroups = 10)
+```
+
+## 3 Centering and Standardizing
+
+We can create centered or standardized variables in R by combining piping and the mutate function.  
+
+Centering a numerical variable means subtracting its sample mean from all observations of that variable.  
+
+The code below creates a centered age variable called ``age_cent`` based on the ``age`` variable in the ``age_death_data`` tibble object.  It stores the new ``age_cent`` variable in the ``age_death_data`` tibble object.  Run the code below to create the centered age variable and use the ``summary()`` function to inspect the ``age_cent`` variable.      
+
+```{r cent01, exercise = TRUE, exercise.lines = 6}
+age_death_data <- 
+  age_death_data %>% 
+  mutate(age_cent = age - mean(age))
+summary(age_death_data$age_cent)
+```
+
+Standardizing a numerical variable means subtracting its sample mean from all observations of that variable and then dividing the results by the sample standard deviation.  
+
+The code below creates a standardized age variable called ``age_stdz`` based on the ``age`` variable in the ``age_death_data`` tibble object.  It stores the new ``age_stdz`` variable in the ``age_death_data`` tibble object.  Run the code below to create the standardized age variable and use the ``summary()`` function to inspect the ``age_stdz`` variable.
+
+```{r stdz01, exercise = TRUE, exercise.lines = 6}
+age_death_data <- 
+  age_death_data %>% 
+  mutate(age_stdz = (age - mean(age)) / sd(age))
+summary(age_death_data$age_stdz)
+```
+
+## More Practice
+
+Data from a hypothetical study on the relationship between weight and diabetes in men is provided in the tibble object called ``diabetes_data``.  The variables that we will use are:
+
+|Variable           |Levels                             | Variable Class in R|
+|:-----------------:|:---------------------------------:|:------------------:|   
+| ``diabetes``      |1 = diabetes, 0 = no diabetes       | numeric            |
+| ``weight``        |weight in pounds                   | numeric            |
+
+**Exercise 1.** Construct an empirical logit plot to determine if there is a linear association between the log odds of diabetes and weight.  Split the ``weight`` variable into 10 intervals with approximately equal numbers of observations falling in each interval.   
+
+```{r ex1, exercise = TRUE, exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex1-solution}
+emplogitplot1(diabetes ~ weight, data = diabetes_data, ngroups = 10)
+```
+
+**Exercise 2.** Create a centered version of the ``weight`` variable called ``weight_cent`` and store this in the ``diabetes_data`` tibble.
+
+```{r ex2, exercise = TRUE, exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex2-solution}
+diabetes_data <- 
+  diabetes_data %>% 
+  mutate(weight_cent = weight - mean(weight))
+```
+
+**Exercise 3.** Create a standardized version of the ``weight`` variable called ``weight_stdz`` and store this in the ``diabetes_data`` tibble.
+
+```{r ex3, exercise = TRUE, exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex3-solution}
+diabetes_data <- 
+  diabetes_data %>% 
+  mutate(weight_stdz = (weight - mean(weight)) / sd(weight))
+```

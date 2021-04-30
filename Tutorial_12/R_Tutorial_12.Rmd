@@ -1,0 +1,149 @@
+---
+title: "R Tutorial 12"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+
+# library(magick)
+# library(cowplot)
+knitr::opts_chunk$set(echo = FALSE)
+
+dat_url1 <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/death_data.csv")
+death_data <- tibble(read.csv(text = dat_url1))
+
+dat_url2 <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/lung_cancer_data.csv")
+lung_cancer_data <- tibble(read.csv(text = dat_url2))
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- How to fit Poisson regression models for count data.
+- How to fit Poisson regression models for rate data. 
+- How to compute an estimate for the dispersion parameter.
+- How to fit quasi-Poisson regression models. 
+
+We will be using data from the study of the number of AIDS deaths over 3-month periods discussed in Lecture 12.  You can assume that this data set has been stored as a tibble object called ``death_data``.  The variables that we will use are:
+
+|Variable        |Levels/Values                                  | Variable Class in R|
+|:--------------:|:---------------------------------------------:|:------------------:|   
+| ``period``     |1 - 14 corresponding to number of 3-month      | numeric            |
+|                |periods after January 1983                     |                    |
+| ``period_bin`` |1 if after June 1984, 0 otherwise              | numeric            |
+| ``count``      |number of AIDS deaths                          | numeric            |
+
+
+We will also be using data from the study of lung cancer rates in different cities in Denmark discussed in Lecture 12.  You can assume that this data set has been stored as a tibble object called ``lung_cancer_data``.  The table below defines the relevant variables.
+
+|Variable        |Levels/Values                                  | Variable Class in R|
+|:--------------:|:---------------------------------------------:|:------------------:|   
+| ``age_midpt``  |midpoint for age category                      | numeric            |
+| ``city``       |Fredericia, Horsens, Kolding, Vejle            | character          |
+| ``cases``      |number of lung cancer cases                    | numeric            |
+| ``population`` |number people at risk for lung cancer          | numeric            |
+
+## 2 Poisson Regression for Counts
+
+To fit a Poisson regression model for a count response, we can use the ``glm()`` function.  The arguments for the ``glm()`` function are:
+
+(1) **formula**: This is a symbolic description of the model to be fitted.  The structure of the formula is: ``count response variable ~ predictor 1 + predictor 2 + ... + predictor p``.    
+
+(2) **family**: This is how we specify the random component and link function. For count response GLMs, we will use the following family argument to fit a Poisson regression model with log link: ``poisson(link = "log")``.  
+
+(3) **data**: This is the tibble or data frame object that contains the response and predictor variables
+
+**Example.** Fit a Poisson regression model using the ``death_data`` tibble with ``count`` as the response and with ``period`` as the only predictor.  
+
+```{r poimod01, exercise = TRUE, exercise.lines = 5}
+# the code below fits the model and stores it as a glm object called pois_mod_01
+pois_mod_01 <- glm(count ~ period, family = poisson(link = "log"), data = death_data)
+# this will print the coefficient table for the fitted model
+summary(pois_mod_01)
+```
+
+## 3 Poisson Regression for Rates
+
+We can also use the ``glm()`` function to fit Poisson regression models with a rate response by including an offset term in the formula argument.  Suppose that our data set contains a variable that indexes the interval over which a specific count is observed.  Let's call this variable ``index``.  If we are using a log link function, then we can include an offset by simply adding the term ``offset(log(index))`` to the formula argument.  This ensures that the offset term (``log(index)``) is included in the model with a coefficient of 1.  
+
+**Example.** Fit a Poisson regression model using the ``lung_cancer_data`` tibble with the rate of lung cancer cases as the response and with ``age_midpt`` as the only predictor.  In this data set, the rate response is ``cases`` / ``population``.  We specify this in the ``glm()`` function by using the ``cases`` variable as the count response and including an offset with the form ``offset(log(population))``.    
+
+```{r poimod02, exercise = TRUE, exercise.lines = 5}
+# the code below fits the model and stores it as a glm object called pois_mod_02
+pois_mod_02 <- glm(cases ~ age_midpt + offset(log(population)), 
+                   family = poisson(link = "log"), data = lung_cancer_data)
+# this will print the coefficient table for the fitted model
+summary(pois_mod_02)
+```
+
+## 4 Handling Overdispersion
+
+Count responses often exhibit more variability than is assumed under a Poisson model.  This phenomenon is known as overdispersion.  In Lecture 12, we learned that we can check for overdispersion by computing an estimate for the dispersion parameter, $\widehat{\phi}$.  There are 2 ways to do this:  
+
+(1) We can directly compute the estimate $\displaystyle \widehat{\phi} = \frac{\sum_{i = 1}^n (\text{Pearson residual})_i^2 }{n-p-1}$ (where $n$ is the number of observations and $p$ corresponds to the number of slopes in the model) by extracting the Pearson residuals from a fitted Poisson model and performing the calculations in R.   
+
+(2) We can fit a quasi-Poisson model.  Doing so "automatically" computes $\widehat{\phi}$.  
+
+Approach (2) is simpler, so we will use this.  
+
+The procedure for fitting a quasi-Poisson model in R is nearly identical to fitting a Poisson model.  The only difference is that that we need to specify ``family = quasipoisson(link = "log")``.  
+
+**Example** Fit a quasi-Poisson model using the ``death_data`` tibble with ``count`` as the response and with ``period`` as the only predictor.   
+
+```{r qpoimod01, exercise = TRUE, exercise.lines = 5}
+# the code below fits the model and stores it as a glm object called pois_mod_01
+qpois_mod <- glm(count ~ period, family = quasipoisson(link = "log"), data = death_data)
+# this will print the coefficient table for the fitted model
+summary(qpois_mod)
+```
+
+In the output from the code chunk above, we see: ``(Dispersion parameter for quasipoisson family taken to be 2.403942)``.  This tells us that $\widehat{\phi} = 2.403942$, suggesting evidence of overdispersion since $\widehat{\phi} > 1$.  The standard errors, test statistics, and p-values have been corrected to account for the overdispersion.  
+
+## More Practice
+
+**Exercise 1.** Fit a Poisson regression model using the ``death_data`` tibble with ``count`` as the response and with ``period_bin`` as the only predictor.         
+
+```{r ex1, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex1-solution}
+# the code below fits the model and stores it as a glm object called pois_mod_ex01
+pois_mod_ex01 <- glm(count ~ period_bin, family = poisson(link = "log"), data = death_data)
+# this will print the coefficient table for the fitted model
+summary(pois_mod_ex01)
+```
+
+**Exercise 2.** Fit a quasi-Poisson regression model using the ``death_data`` tibble with ``count`` as the response and with ``period_bin`` as the only predictor.         
+
+```{r ex2, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex2-solution}
+# the code below fits the model and stores it as a glm object called qpois_mod_ex02
+qpois_mod_ex02 <- glm(count ~ period_bin, family = quasipoisson(link = "log"), data = death_data)
+# this will print the coefficient table for the fitted model
+summary(qpois_mod_ex02)
+```
+
+
+**Exercise 3.** Fit a Poisson regression model using the ``lung_cancer_data`` tibble with the rate of lung cancer cases as the response and with ``city`` as the only predictor.
+
+```{r ex3, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex3-solution}
+# the code below fits the model and stores it as a glm object called pois_mod_ex03
+pois_mod_ex03 <- glm(cases ~ city + offset(log(population)), family = poisson(link = "log"), data = lung_cancer_data)
+# this will print the coefficient table for the fitted model
+summary(pois_mod_ex03)
+```
+

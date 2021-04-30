@@ -1,0 +1,228 @@
+---
+title: "R Tutorial 06"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+library(gmodels)
+library(epiR)
+library(Exact)
+library(DescTools)
+library(lmtest)
+knitr::opts_chunk$set(echo = FALSE)
+dat_url <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/mus14data.csv")
+hrs_data <- tibble(read.csv(text = dat_url))
+hrs_data <- 
+  hrs_data %>% 
+  mutate(retire_cat = factor(retire, levels = c(0,1)),
+         hhincome_cat = case_when(hhincome < 10 ~ "< $10K",
+                                  hhincome >= 10 & hhincome < 30 ~ "[$10K, $30K)",
+                                  hhincome >= 30 & hhincome < 50 ~ "[$30K, $50K)",
+                                  hhincome >= 50 ~ ">= $50K"),
+         hhincome_cat = factor(hhincome_cat, levels = c("< $10K", "[$10K, $30K)", "[$30K, $50K)", ">= $50K")),
+         chronic_tri = case_when(chronic == 0 ~ "none",
+                                 chronic %in% 1:3 ~ "1_to_3",
+                                 chronic > 3 ~ "4_or_more"),
+         chronic_tri = factor(chronic_tri, levels = c("none", "1_to_3", "4_or_more")))
+
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- How to fit and analyze multivariable GLMs.
+- How to conduct likelihood ratio tests for GLM parameters.
+
+In this tutorial we will be using the HRS data set.  You can assume that this data set has been stored as a tibble object called ``hrs_data``.  The variables that we will use in the following sections are:
+
+|Variable           |Levels                                                 | Variable Class in R|
+|:-----------------:|:-----------------------------------------------------:|:------------------:|   
+| ``private``       |1 = has psi, 0 = no psi                                | numeric            |
+|                   |(psi = private supp. insurance)                        |                    |
+| ``retire_cat``    |1 = retired, 0 = not retired                           | factor             |
+| ``hhincome_cat``  |< \$10K, [\$10K, \$30K), [\$30K,\$50K), or $\ge$ \$50K | factor             |
+|                   |``levels = c("< $10K", "[$10K, $30K)", "[$30K, $50K)", ">= $50K")``|        |
+| ``age``           |age in years                                           | numeric            |
+
+## 2 Multivariable GLMs
+
+Multivariable GLMs are fit in R the same way that simple GLMs are fit but with additional predictors included in the formula of the ``glm()`` function.  See R Tutorial 04 Section 3.  
+
+**Example** Use the HRS data to fit a logistic model with private insurance status as the binary response and retirement status, annual household income, and age as the predictors.  The R code below fits this model.  
+
+```{r mvglm01, exercise = TRUE, exercise.lines = 5}
+# the code below fits the model and stores it as a glm object called logit_mod_full
+logit_mod_full <- glm(private ~ retire_cat + hhincome_cat + age, 
+                      family = binomial(link = "logit"), data = hrs_data)
+# this will print some information about the fitted model
+logit_mod_full
+```
+
+Note that we only needed to add more predictors on the right side of the $\sim$ in the formula separated by $+$ signs in order to fit the multivariable logistic model.  Changing the link function to ``"identity"`` will fit a multiple linear probability model and changing the link function to ``"log"`` will fit a multivariable log binomial model.  
+
+The HRS data used for the previous example is individual level data.  We can also fit multivariable GLMs using group level data simply by adding more predictors in the formula argument of the ``glm()`` function.  
+
+## 3 Using Multivariable GLMs
+
+Once we have created a multivariable glm object, we can apply the functions that we learned about in R Tutorial 04 to the object.
+
+For example, we can take the logistic model glm object that we created in the previous section (``logit_mod_full``) and take the antilogs of the model coefficients to get the adjusted odds ratio estimates.  The code below extracts the model coefficients from the ``logit_mod_full`` object using the ``coef()`` function and then takes the antilogs using the ``exp()`` function.
+
+```{r prepare-logit01a}
+logit_mod_full <- glm(private ~ retire_cat + hhincome_cat + age, 
+                      family = binomial(link = "logit"), data = hrs_data)
+```
+
+```{r mvglm02, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+exp(coef(logit_mod_full))
+```
+
+The ``summary()`` function is also very useful as it provides information on the parameter estimates, their standard errors, and the Wald test statistics (z value column) and p-values (Pr(>|z|) column) for each predictor.  The code below applies the ``summary()`` function to the glm object created in the last section.
+
+```{r mvglm02b, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+summary(logit_mod_full)
+```
+
+Another useful function that we can apply to a mutlivariable glm object is the ``confint.default()`` function.  This function computes confidence intervals for the intercept and slopes.  The code below computes the 99\% confidence intervals for the intercept (log odds) and slopes (log ORs) of the model that we fit in the previous section.
+
+```{r mvglm03, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+confint.default(logit_mod_full, level = 0.99)
+```
+
+We can also apply the antilog function ``exp()`` around the ``confint.default()`` function to obtain confidence intervals for the antilog of the intercept (odds) and antilogs of the slopes (ORs).  The code below computes the 99\% confidence intervals for the odds (anitlog of intercept) and the ORs (antilogs of slopes) of the model that we fit in the previous section.
+
+```{r mvglm04, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 3}
+exp(confint.default(logit_mod_full, level = 0.99))
+```
+
+The ``predict()`` function can also be used with multivariable glm objects.  Recall that the arguments of the ``predict()`` function are: (1) the glm object, (2) the type of prediction (``type = "link"`` or ``type = "response"``), and (3) a new data set with values of the predictors for which we want a prediction.  Recall that the 3rd argument is optional.  If it is not included, then the ``predict()`` function will simply return the predictions for the observations that were used to fit the model.  To review the ``predict()`` function, go back to R Tutorial 04 Section 6.  
+
+Suppose that we want to obtain the predicted probability of a person having supplemental insurance who is retired, has an annual household income that is less than \$10K and is 82.  The code below creates the new data set (tibble) with these predictor values and then uses the ``predict()`` function to obtain the predicted probability of interest.
+
+```{r mvglm05, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 11}
+# create the new data set with the values of the predictors
+#  be sure to use the same factor structure for the factor variables.
+new_data_obs <- tibble(age = 82,
+                       retire_cat = factor(1, levels = c(0,1)),
+                       hhincome_cat = factor("< $10K", 
+                                             levels = c("< $10K", "[$10K, $30K)", 
+                                                        "[$30K, $50K)", ">= $50K")))
+
+# obtain the predicted probability         
+predict(logit_mod_full, type = "response", newdata = new_data_obs)
+```
+
+## 4 LRTs for GLM Parameters
+
+In this week's lecture we learned that LRTs for GLM parameters require the fitting of two models: a full model and a nested reduced model.  Once we fit these two models and store them as separate glm objects, we can simply feed them into the ``lrtest()`` function from the lmtest package. Be sure to load this package when you are running R on your own computer - you can assume it is loaded here.  The first argument for the ``lrtest()`` function is the reduced model object and the second argument is the full model object.  
+
+**Example** Conduct a LRT of the null hypothesis that private insurance status is independent of annual household income, adjusting for age and retirement status.  This test requires us to fit a full model with age, retirement status, and annual household income as the predictors and a reduced model with only age and retirement as the predictors.  We already fit the full model in Section 2, so we will use the corresponding glm object ``logit_mod_full``.  We need to fit the reduced model and run the ``lrtest()`` function.  The code below does this and shows the output for the LRT.
+
+```{r mvglm06, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 7}
+# fit and store the reduced model
+logit_mod_reduced <- glm(private ~ retire_cat + age, 
+                         family = binomial(link = "logit"), data = hrs_data)
+
+# compute the LRT statistic and p-value         
+lrtest(logit_mod_reduced, logit_mod_full)
+```
+
+**Example** Conduct a LRT of the null hypothesis that private insurance status is independent of annual household income, age, and retirement status.  This test requires us to fit a full model with age, retirement status, and annual household income as the predictors and a reduced model with only the intercept.  Again, we already fit the full model in Section 2, so we will use the corresponding glm object ``logit_mod_full``.  We need to fit the reduced intercept-only model and run the ``lrtest()`` function.  The code below does this and shows the output for the LRT.
+
+```{r mvglm07, exercise = TRUE, exercise.setup = "prepare-logit01a", exercise.lines = 7}
+# fit and store the reduced intercept-only model 
+#  to specify an intercept-only model, we put a 1 after the ~ in the formula argument 
+logit_mod_reduced_intonly <- glm(private ~ 1, family = binomial(link = "logit"), data = hrs_data)
+
+# compute the LRT statistic and p-value         
+lrtest(logit_mod_reduced_intonly, logit_mod_full)
+```
+
+## More Practice
+
+For these exercises we will be using the HRS data set.  You can assume that this data set has been stored as a tibble object called ``hrs_data``.  The variables that we will use in the following sections are:
+
+|Variable           |Levels                                                 | Variable Class in R|
+|:-----------------:|:-----------------------------------------------------:|:------------------:|   
+| ``private``       |1 = has psi, 0 = no psi                                | numeric            |
+|                   |(psi = private supp. insurance)                        |                    |
+| ``retire_cat``    |1 = retired, 0 = not retired                           | factor             |
+| ``hhincome``      |annual income in thousands of dollars                  | numeric            |
+| ``chronic_tri``   |chronic medical conditions: none, 1-3, 4 or more       | factor             |
+|                   |``levels = c("none", "1_to_3", "4_or_more")``          |                    |
+
+**Exercise 1.** Use the ``hrs_data`` tibble (you can assume this has been loaded) to fit a logistic model with private supplemental medical insurance status (``private``) as the binary response and retirement status (``retire_cat``), annual household income (``hhincome``), and number of chronic medical conditions (``chronic_tri``) as the predictors.  Use the ``summary()`` function to print a summary of the fitted model.
+
+```{r ex1, exercise = TRUE, exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex1-solution}
+logit_mod_ex1 <- glm(private ~ retire_cat + hhincome + chronic_tri, 
+                     family = binomial(link = "logit"), data = hrs_data)
+summary(logit_mod_ex1) 
+```
+
+
+**Exercise 2.** Use the model object created in the solution to Exercise 1 to find the predicted probability of having private supplemental insurance for someone who is not retired, has an annual household income of \$15K, and has 1 - 3 chronic medical conditions. 
+
+```{r prepare-ex02}
+logit_mod_ex1 <- glm(private ~ retire_cat + hhincome + chronic_tri, 
+                     family = binomial(link = "logit"), data = hrs_data)
+```
+
+```{r ex2, exercise = TRUE, exercise.setup = "prepare-ex02", exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex2-solution}
+new_data_ex2 <- tibble(retire_cat = factor(0, levels = c(0,1)),
+                       hhincome = 15,
+                       chronic_tri = factor("1_to_3", levels = c("none", "1_to_3", "4_or_more")))
+predict(logit_mod_ex1, type = "response", newdata = new_data_ex2)
+```
+
+**Exercise 3.** Use a LRT to test the null hypothesis that private insurance status is independent of retirement status, household income, and number of chronic medical conditions.   
+
+```{r prepare-ex03}
+logit_mod_ex1 <- glm(private ~ retire_cat + hhincome + chronic_tri, 
+                     family = binomial(link = "logit"), data = hrs_data)
+```
+
+```{r ex3, exercise = TRUE, exercise.setup = "prepare-ex02", exercise.lines = 6, message = FALSE}
+
+```
+
+```{r ex3-solution}
+# use the full model from Exercise 1 stored in the object logit_mod_ex1
+# fit the reduced intercept-only model
+logit_mod_ex3 <- glm(private ~ 1, family = binomial(link = "logit"), data = hrs_data)
+# find the LRT test statistic and p-value
+lrtest(logit_mod_ex3, logit_mod_ex1)
+```
+
+**Exercise 4.** Use a LRT to test the null hypothesis that private insurance status is independent of number of chronic medical conditions, adjusting for retirement status and household income.   
+
+```{r prepare-ex04}
+logit_mod_ex1 <- glm(private ~ retire_cat + hhincome + chronic_tri, 
+                     family = binomial(link = "logit"), data = hrs_data)
+```
+
+```{r ex4, exercise = TRUE, exercise.setup = "prepare-ex02", exercise.lines = 5, message = FALSE}
+
+```
+
+```{r ex4-solution}
+# use the full model from Exercise 1 stored in the object logit_mod_ex1
+# fit the reduced model with only retire_cat and hhincome predictors
+logit_mod_ex4 <- glm(private ~ retire_cat + hhincome, 
+                     family = binomial(link = "logit"), data = hrs_data)
+# find the LRT test statistic and p-value
+lrtest(logit_mod_ex4, logit_mod_ex1)
+```

@@ -1,0 +1,225 @@
+---
+title: "R Tutorial 09"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+library(DescTools)
+library(lmtest)
+library(ResourceSelection)
+knitr::opts_chunk$set(echo = FALSE)
+
+dat_url <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/sim_birthweight.csv")
+bwt_data <- tibble(read.csv(text = dat_url))
+bwt_data <- 
+  bwt_data %>% 
+  mutate(prenatal = factor(prenatal, levels = c(0,1)),
+         smoke = factor(smoke, levels = c("Never", "Moderate", "Heavy"))) %>% 
+  filter(age %in% 14:18)
+
+
+bwt_data_2tab <- table(bwt_data$age, bwt_data$lbw, bwt_data$smoke) 
+F_freq <- c(bwt_data_2tab[,1,1], bwt_data_2tab[,1,2], bwt_data_2tab[,1,3])
+S_freq <- c(bwt_data_2tab[,2,1], bwt_data_2tab[,2,2], bwt_data_2tab[,2,3])
+age <- rep(14:18, 3)
+smoke <- factor(rep(c("Never", "Moderate", "Heavy"), each = 5), levels = c("Never", "Moderate", "Heavy"))
+bwt_data_group_as <- tibble(smoke, age, S_freq, F_freq)
+
+
+dat_url2 <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/mus14data.csv")
+hrs_data <- tibble(read.csv(text = dat_url2))
+hrs_data <- 
+  hrs_data %>% 
+  mutate(private_cat = case_when(private == 1 ~ "has psi",
+                                 private == 0 ~ "no psi"),
+         private_cat = factor(private_cat, levels = c("no psi", "has psi")),
+         female_cat = case_when(female == 1 ~ "female",
+                                female == 0 ~ "male"),
+         female_cat = factor(female_cat, levels = c("male", "female")),
+         age_cat = case_when(age < 65 ~ "< 65",
+                             age >= 65 & age < 69 ~ "[65, 69)",
+                             age >= 69 ~ ">=69"),
+         age_cat = factor(age_cat, levels = c("< 65", "[65, 69)", ">=69")))
+
+
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- How to compute a p-value for a goodness of fit test statistic.
+- How to compute a Hosmer-Lemeshow test statistic and p-value. 
+- How to obtain residuals from a GLM.  
+
+We will be using simulated data from a hypothetical study of low birth weight risk discussed in Lecture 09.  You can assume that this data set has been stored as a tibble object called ``bwt_data``.  The variables that we will use are:
+
+|Variable        |Levels                                         | Variable Class in R|
+|:--------------:|:---------------------------------------------:|:------------------:|   
+| ``lbw``        |1 = low birth weight, 0 = not low birth weight | numeric            |
+| ``age``        |age in years                                   | numeric            |
+| ``prenatal``   |1 = had prenatal visit, 0 = no prenatal visit  | factor             |
+| ``smoke``      |Never (ref. level), Moderate, Heavy            | factor             |
+
+We will also use the HRS data set that has been stored as a tibble object called ``hrs_data``.
+
+## 2 p-values for GOF Tests
+
+In Lecture 09, we saw that the goodness of fit (GOF) test for a GLM that is estimated from group level data is simply a likelihood ratio test (LRT) that compares a saturated model ($S$) to a working model ($M$) that is nested in the saturated model. 
+
+To carry out this test, we can fit both the saturated and working models and then use the ``lrtest()`` function from the lmtest package to compare the log likelihoods of the two models.  
+
+The code chunk below fits a saturated model with age as a 5-level categorical predictor and a working model that assumes a linear relationship between age and the log odds of having a low birth weight baby.  It then conducts the GOF LRT by computing the deviance statistic, the corresponding degrees of freedom, and the p-value.  Run the code chunk below to get the results for the GOF test.
+
+```{r gof_01, exercise = TRUE, exercise.lines = 17}
+# first create the group level data set 
+# (this is one of many ways to create the group level data set)
+# here, we are using the table function to compute the number of
+# successes and failures for each age level and then combining 
+# information into a group level data set with 5 observations
+age_lbw_tab <- table(bwt_data$age, bwt_data$lbw)
+bwt_data_group <- tibble(S_freq = age_lbw_tab[,2], 
+                         F_freq = age_lbw_tab[,1], 
+                         age = 14:18)
+# fit saturated model S
+bwt_mod_S <- glm(cbind(S_freq, F_freq) ~ factor(age), family = binomial(link = "logit"),
+                 data = bwt_data_group)
+# fit working model M
+bwt_mod_M <- glm(cbind(S_freq, F_freq) ~ age, family = binomial(link = "logit"),
+                 data = bwt_data_group)
+# GOF test is LRT
+lrtest(bwt_mod_M, bwt_mod_S)
+```
+
+There is another way to conduct the GOF test in R that is much simpler.  It is simpler because it does not require us to fit both the saturated model and the working model.  The code chunk below uses the ``summary()`` function on the working model glm object, ``bwt_mod_M``, to obtain the residual deviance and corresponding degrees of freedom.  Run the code to see the summary information.    
+
+```{r prepare-workmod}
+age_lbw_tab <- table(bwt_data$age, bwt_data$lbw)
+bwt_data_group <- tibble(S_freq = age_lbw_tab[,2], 
+                         F_freq = age_lbw_tab[,1], 
+                         age = 14:18)
+bwt_mod_M <- glm(cbind(S_freq, F_freq) ~ age, family = binomial(link = "logit"),
+                 data = bwt_data_group)
+```
+
+```{r gof_02, exercise = TRUE, exercise.setup = "prepare-workmod", exercise.lines = 3}
+summary(bwt_mod_M)
+```
+
+From the output, we see ``Residual deviance: 0.66599  on 3  degrees of freedom``.  These are the deviance and degrees of freedom that were computed by the ``lrtest()`` function above.  So, when applied to a glm object, the ``summary()`` function provides the test statistic (deviance) and corresponding degrees of freedom for the GOF test.  The only thing missing is the corresponding p-value.  To obtain the p-value, we can use the ``pchisq()`` function.  For our purposes here, we can assume that the ``pchisq()`` function has 3 arguments: (1) the quantile value (for the GOF test, this is the deviance), (2) the degrees of freedom (df), and (3) ``lower.tail = FALSE`` to tell the function that you want to compute the area above the quantile value.  
+
+The code chunk below computes the p-value corresponding to the deviance statistic of 0.66599 from a $\chi^2$-distribution on 3 degrees of freedom.  Run the code chunk below to see that you obtain the same p-value as you did from the ``lrtest()`` function above.  (Note that there is a slight difference since the deviance statistic from the ``summary()`` function is rounded.)      
+
+```{r gof_03, exercise = TRUE, exercise.lines = 3}
+pchisq(0.66599, df = 3, lower.tail = FALSE)
+```
+
+## 3 Hosmer-Lemeshow Test
+
+Recall that, for individual level data, we cannot use the deviance statistic to assess goodness of fit of a model.  Instead, we use the Hosmer-Lemeshow (HL) test.  
+
+Consider the HRS data set.  Suppose that we want to assess the goodness of fit of a logistic model with private insurance status ($\mathtt{private}$) as the binary response and annual household income ($\mathtt{hhincome}$), number of chronic medical conditions ($\mathtt{chronic}$), marital status ($\mathtt{married}$), and age ($\mathtt{age}$) as predictors. Note: $\mathtt{hhincome}$, $\mathtt{chronic}$, and $\mathtt{age}$ are numerical predictors and $\mathtt{married}$ is binary.  The code chunk below fits this model.  Run the code and view the summary output.
+
+```{r hl_01, exercise = TRUE, exercise.lines = 3}
+hrs_mod <- glm(private ~ hhincome + chronic + married + age, 
+               family = binomial(link = "logit"), data = hrs_data)
+summary(hrs_mod)
+```
+
+```{r prepare-hl}
+hrs_mod <- glm(private ~ hhincome + chronic + married + age, 
+               family = binomial(link = "logit"), data = hrs_data)
+```
+
+To compute the Hosmer-Lemeshow test statistic and p-value, we will use the ``hoslem.test()`` function from the ResourceSelection package.  You can assume that the ResourceSelection package is loaded here.  Remember to install and load this package on your own computer if you want to use the ``hoslem.test()`` in your RStudio environment.  
+
+The arguments for the ``hoslem.test()`` are:  
+
+(1) The **observed response values** (0s and 1s) from the data used to fit the model.  These values are actually stored in the glm object that we created above.  We can "pick" them off by using the code: ``hrs_mod$y``.  The generic element ``y`` holds the observed response values in a glm object.  
+
+(2) The **predicted response values** (predicted $\widehat{\pi}s$) from the fitted model.  These values can be obtained by applying the ``fitted()`` function to the glm model object.  For a binary logistic glm object, the ``fitted()`` function computes the predicted probability of response for each observation in the data set that was used to fit the model.  
+
+(3) The number of percentile groups, ``g``.  By default, ``g = 10`` which forms the 10 groupings of the ordered **predicted response values**.  
+
+The code chunk below computes the Hosmer-Lemeshow test statistic and p-value that can be used to assess the goodness of fit of the logistic model with private supplemental insurance as the binary response and with annual household income, number of chronic medical conditions, marital status, and age as predictors.  Run the code to obtain the HL test statistic and p-value based on 15 percentile groupings.  
+
+```{r hl_02, exercise = TRUE, exercise.setup = "prepare-hl", exercise.lines = 3}
+hoslem.test(hrs_mod$y, fitted(hrs_mod), g = 15)
+```
+ 
+## 4 Residuals  
+
+Recall that we discussed two types of model residuals in Lecture 09: **Pearson residuals** and **standardized residuals**.  Both types of residuals are easy to obtain from a glm object.  These residuals are useful when your model has been fit based on group level data.    
+
+**Pearson residuals** can be computed by applying the ``resid()`` function to a glm object and specifying ``type = "pearson"``.  The code chunk below computes the Pearson residuals for the working model that we fit in Section 2 that assumes a linear relationship between age and the log odds of having a low birth weight baby. Run the code chunk below to obtain the Pearson residuals for each value of the birth mother's age.  The value for the predictor ``age`` is printed above each Pearson residual.  Notice that there are only 5 residuals for this model since we used group level data with only 5 possible predictor values, namely: 14, 15, 16, 17, and 18.      
+
+```{r resid_01, exercise = TRUE, exercise.setup = "prepare-workmod", exercise.lines = 3}
+resid(bwt_mod_M, type = "pearson")
+```
+
+**Standardized residuals** can be computed by applying the ``rstandard()`` function.  The only argument that is needed for this function is the fitted glm object.  Run the code chunk below to obtain the standardized residuals for each value of the birth mother's age (using the ``bwt_mod_M`` glm object).
+
+```{r resid_02, exercise = TRUE, exercise.setup = "prepare-workmod", exercise.lines = 3}
+rstandard(bwt_mod_M)
+```
+
+You can also use the ``resid()`` and ``rstandard()`` functions to obtain residuals for glm objects that are based on individual level data, but the residuals are not particularly informative.  The code chunk below extracts the standardized residuals from the logistic model for the HRS data that we fit in Section 3.  Since there are 3206 observations in the HRS data set that was used to fit this model, there will also be 3206 residuals.  
+
+```{r resid_03, exercise = TRUE, exercise.setup = "prepare-hl", exercise.lines = 3}
+rstandard(hrs_mod)
+```
+
+## More Practice
+
+**Exercise 1.** The tibble object ``bwt_data_group_as`` is a group level data set, based on the birth weight data, that contains both age (``age``) and smoking status (``smoke``) of the birth mother.  The number of successes (i.e., number of low birth weight babies) for each combination of the predictor levels is given by the variable ``S_freq`` and the number of failures (i.e., number of non-low birth weight babies) for each combination of the predictor levels is given by the variable ``F_freq``.  Fit a logistic model with these group level data that includes smoking status and age as predictors, assuming a linear relationship between age and the log odds of having a low birth weight baby.  Conduct a goodness of fit test, using the summary output from the glm object that you create and provide the p-value for the test.          
+
+```{r ex1, exercise = TRUE, exercise.lines = 8, message = FALSE}
+
+```
+
+```{r ex1-solution}
+# fit the logistic model
+mod_ex1 <- glm(cbind(S_freq, F_freq) ~ smoke + age, family = binomial(link = "logit"),
+               data = bwt_data_group_as)
+# use summary function to get deviance and corresponding df
+summary(mod_ex1)
+# compute p-value for the GOF test
+pchisq(4.8209, df = 11, lower.tail = FALSE)
+```
+
+**Exercise 2.** Using the HRS data set, fit a logistic model with private insurance status ($\mathtt{private}$) as the binary response and annual household income ($\mathtt{hhincome}$), the square of annual household income, number of chronic medical conditions ($\mathtt{chronic}$), marital status ($\mathtt{married}$), and age ($\mathtt{age}$) as predictors.  Use a Hosmer-Lemeshow test with 10 percentile groupings to assess the model's goodness of fit.
+
+```{r ex2, exercise = TRUE, exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex2-solution}
+# fit the model
+mod_ex2 <- glm(private ~ hhincome + I(hhincome^2) + chronic + married + age, 
+               family = binomial(link = "logit"), data = hrs_data)
+# compute HL test statistic and p-value
+hoslem.test(mod_ex2$y, fitted(mod_ex2), g = 10)
+```
+
+**Exercise 3.** Use the fitted model from the solution to Exercise 1 to obtain the Pearson and standardized residuals for the fitted model.
+
+```{r prepare-ex3}
+mod_ex1 <- glm(cbind(S_freq, F_freq) ~ smoke + age, family = binomial(link = "logit"),
+               data = bwt_data_group_as)
+```
+
+```{r ex3, exercise = TRUE, exercise.lines = 7, exercise.setup = "prepare-ex3", message = FALSE}
+
+```
+
+```{r ex3-solution}
+# Pearson residuals
+resid(mod_ex1, type = "pearson")
+# standardized residuals
+rstandard(mod_ex1)
+```

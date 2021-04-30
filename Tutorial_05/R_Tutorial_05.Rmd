@@ -1,0 +1,363 @@
+---
+title: "R Tutorial 05"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+```{r setup, include = FALSE}
+library(learnr)
+library(tidyverse)
+library(RCurl)
+library(gmodels)
+library(epiR)
+library(Exact)
+library(DescTools)
+knitr::opts_chunk$set(echo = FALSE)
+dat_url <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/mus14data.csv")
+hrs_data <- tibble(read.csv(text = dat_url))
+hrs_data <- 
+  hrs_data %>% 
+  mutate(private_cat = case_when(private == 1 ~ "has psi",
+                                 private == 0 ~ "no psi"),
+         private_cat = factor(private_cat, levels = c("no psi", "has psi")),
+         female_cat = case_when(female == 1 ~ "female",
+                                female == 0 ~ "male"),
+         female_cat = factor(female_cat, levels = c("male", "female")),
+         age_cat = case_when(age < 65 ~ "< 65",
+                             age >= 65 & age < 69 ~ "[65, 69)",
+                             age >= 69 ~ ">=69"),
+         age_cat = factor(age_cat, levels = c("< 65", "[65, 69)", ">=69")))
+
+dat_url2 <- getURL("https://raw.githubusercontent.com/aciarleglio/App_Cat/main/endo_data.csv")
+endo_data <- tibble(read.csv(text = dat_url2))
+```
+
+
+## 1 Introduction
+
+In this tutorial we will cover
+
+- Constructing and using stratified tables.
+- Assessing effect modification via Woolf's test.
+- Conducting stratified analysis using the ``epi.2by2()`` function.
+
+In this tutorial we will be using the HRS data set.  You can assume that this data set has been stored as a tibble object called ``hrs_data``.  The variables that we will use in the following sections are:
+
+|Variable           |Levels                    |
+|:-----------------:|:------------------------:|   
+| ``private_cat``   |has psi, no psi           |  
+|                   |(psi = private supp. insurance) |  
+| ``female_cat``    |female, male              |
+| ``age_cat``       |< 65, [65, 69), $\ge$ 69  |
+
+
+## 2 Stratified Tables
+
+There are two ways that we can generate stratified tables in R: (1) using the ``table()`` function if our data are stored in a tibble object with one observation per row and (2) using the ``xtabs()`` function if we have group level data that is provided to us.  We consider each approach below.
+
+### Using the ``table()`` Function
+
+Recall that, in order to make a contingency table with the ``table()`` function, all we need are two arguments: the row variable and the column variable.  These need to be entered into the table function in that order.  If we want to stratify by a third variable, all we need to do is include that third variable as a third argument.
+
+**Example 1.** Suppose that we want to investigate the association between whether or not a person has supplemental private insurance and their sex, stratified by age category (< 65, [65, 69), $\ge$ 69).  
+
+The code chunk below creates the stratified tables as one object.  Run the code and view the stratified tables.
+
+```{r tabfunc01, exercise = TRUE, exercise.lines = 5}
+# to create a stratified table, the arguments are:
+#  table(row_variable, column_variable, strata_variable)
+sex_priv_age_tab <- table(hrs_data$female_cat, hrs_data$private_cat, hrs_data$age_cat)
+sex_priv_age_tab 
+```
+
+```{r prepare-sexprivage}
+sex_priv_age_tab <- table(hrs_data$female_cat, hrs_data$private_cat, hrs_data$age_cat)
+sex_priv_age_tab_rearrange <- sex_priv_age_tab[,c(2,1),]
+```
+
+If we want, we can rearrange the rows and columns just as we have done with the tables that we have created in previous tutorials.  Suppose that we want the tables to have "has psi" in the first column and "no psi" in the second column.  We use the following code.
+
+```{r tabfunc02, exercise = TRUE, exercise.setup = "prepare-sexprivage", exercise.lines = 5}
+# notice that we need to include an extra comma after the column indices 
+#  because there is a third index that corresponds to the variable that
+#   defines the strata
+sex_priv_age_tab_rearrange <- sex_priv_age_tab[,c(2,1),]
+sex_priv_age_tab_rearrange
+```
+
+If we want, we can rearrange the order of the partial tables too.  Suppose that we want the partial tables to be ordered from highest age category to lowest age category.  We use the following code.
+
+```{r tabfunc03, exercise = TRUE, exercise.setup = "prepare-sexprivage", exercise.lines = 5}
+sex_priv_age_tab_rearrange[,,c(3,2,1)]
+```
+
+If we want to pick off one of the partial tables, we can specify which table we want by using the third index of the table object.  Suppose that we want to pick off the table for the oldest age category.  We use the following code.
+
+```{r tabfunc04, exercise = TRUE, exercise.setup = "prepare-sexprivage", exercise.lines = 6}
+# in the third index of the table object, we specify the name
+#  of the strata variable and the level of that variable corresponding
+#   to the table we want to pick off
+sex_priv_age_tab_rearrange[,,age_cat = ">=69"]
+```
+
+This is useful when we want to compute stratum specific measures of association.  For example, if we want to look at the association between private insurance status and sex among those who are in the [65, 69) age category, we can simply apply the ``epi.2by2()`` to this partial table.  We do this in the code chunk below.
+
+```{r tabfunc05, exercise = TRUE, exercise.setup = "prepare-sexprivage", exercise.lines = 3}
+epi.2by2(sex_priv_age_tab_rearrange[,,age_cat = "[65, 69)"], conf.level = 0.95)
+```
+
+In Lecture 05, we saw that, in order to determine if a variable ($Z$) is a potential confounder of the association between an exposure ($X$) and a response ($Y$), then one of the things that we need to check is that $Z$ is associated with $Y$ among those who are unexposed ($X = \bar{E}$).  If we want to use R to check this association, then we will need to subset the data so that we only use observations for which $X = \bar{E}$.  
+
+For Example 1 above, we will take Males to be the "unexposed" group.  The code chunk below subsets the HRS data to only Male observations and stores the resulting data set as a tibble object.  We can then use this data subset object to make a table cross-classifying private insurance status and age.  In the code, we pipe the ``hrs_data`` tibble through the ``filter()`` function.  The ``filter()`` function is used to specify which types of observations we want to retain.  In our case, we want those observations for which ``female_cat == "male"``.  Notice that you need to use a double equal here.  
+
+```{r tabfunc06, exercise = TRUE, exercise.lines = 8}
+# create the subset tibble object
+hrs_data_males_only <- 
+  hrs_data %>% 
+  filter(female_cat == "male")
+# construct 3 x 2 table cross classifying  
+#  private insurance status by age_cat
+table(hrs_data_males_only$age_cat, hrs_data_males_only$private_cat)
+```
+
+### Using the ``xtabs()`` Function
+
+As noted above, the ``xtabs()`` function can be used to create stratified tables when we have group level data. The table object created by the ``xtabs()`` function can be used the same way as the object created by the ``table()`` function discussed in the previous section.
+
+When we used the ``xtabs()`` function before, we first needed to create a tibble object (tibble_obj) with the row (row_var), column (column_var), and frequency (freq_var) variables.  Now we need to add the additional strata variable (strata_var).  Once we have all of these variables in a tibble, the code for creating the stratified tables is: ``xtabs(freq_var ~ row_var + column_var + strata_var, data = tibble_obj)``.   
+
+**Example 2.** Suppose that we want to assess the association between disease status and exposure status, stratifying by sex.  The group level data are provide in the tables below.
+
+| sex = M   | $D$ | $\bar{D}$ |  
+|:---------:|:---:|:-------:|   
+| $E$       |12   | 30      |  
+| $\bar{E}$ |6    | 5      |
+
+| sex = F   | $D$ | $\bar{D}$ |  
+|:---------:|:---:|:-------:|   
+| $E$       |8    | 10      |  
+| $\bar{E}$ |9    | 30      |
+
+We can create a stratified table object in R using the following code.  Run the code to see the resulting stratified tables.
+
+```{r xtabfunc01, exercise = TRUE, exercise.lines = 12}
+# create the row, column, strata, and cell count (frequency) variables
+sex_var <- c("M", "M", "M", "M", "F", "F", "F", "F")
+exp_var <- c("E", "E", "Ebar", "Ebar", "E", "E", "Ebar", "Ebar")
+dis_var <- c("D", "Dbar", "D", "Dbar", "D", "Dbar", "D", "Dbar")
+freq_var <- c(12, 30, 6, 5, 8, 10, 9, 30)
+# put these variables into a tibble
+ex_2_data <- tibble(sex_var, exp_var, dis_var, freq_var)
+# create the stratified table object
+ex_2_tab <- xtabs(freq_var ~ exp_var + dis_var + sex_var, data = ex_2_data) 
+ex_2_tab
+```
+
+We can use the ``ex_2_tab`` table object the same way as we used the ``sex_priv_age_tab_rearrange`` object in Example 1.
+
+In the previous section, we finished by seeing how to subset a data set in order to create a table on the subset of the observations.  When we have group level data and use the ``xtabs()`` function to create a table object, you can subset the data directly using the ``xtabs()`` function.
+
+In Example 2, if we want to construct a 2 x 2 table to cross classify observations on sex and disease status among the unexposed, we can simply add an additional "subset" argument in the ``xtabs()`` function.  The code chunk below constructs this table.
+
+```{r prepare-sed01}
+sex_var <- c("M", "M", "M", "M", "F", "F", "F", "F")
+exp_var <- c("E", "E", "Ebar", "Ebar", "E", "E", "Ebar", "Ebar")
+dis_var <- c("D", "Dbar", "D", "Dbar", "D", "Dbar", "D", "Dbar")
+freq_var <- c(12, 30, 6, 5, 8, 10, 9, 30)
+ex_2_data <- tibble(sex_var, exp_var, dis_var, freq_var)
+```
+
+```{r xtabfunc02, exercise = TRUE, exercise.setup = "prepare-sed01", exercise.lines = 5}
+# create 2 x 2 table cross classifying sex and disease status
+#  among those who are unexposed
+ex_2_tab_sex_dis_unex <- xtabs(freq_var ~ sex_var + dis_var, data = ex_2_data, subset = (exp_var == "Ebar")) 
+ex_2_tab_sex_dis_unex
+```
+
+In the addition ``subset`` argument, we specify which observations we want to use.  Here, by specifying ``exp_var == "Ebar"`` we are saying that we only want to use observations from the ``ex_2_data`` tibble object for which the ``exp_var`` variable takes the value of ``Ebar``.  Notice that we need to use the double equal sign.  It is good practice to surround the expression that defines the subset with ().
+
+## 3 Woolf's Test
+
+Woolf's test is used to assess effect modification.  Once a stratified table has been created (using either the ``table()`` function or the ``xtabs()`` function) we can simply apply the ``WoolfTest()`` function from the DescTools package to the stratified table.  The only argument we need for this function is the stratified table object.
+
+**Example 1**. In the last section, we created a table object called ``sex_priv_age_tab_rearrange`` that contains three partial 2 x 2 tables cross classifying private insurance status and sex, stratified by age.  Use Woolf's test to test whether age modifies the association between private insurance status and sex. 
+
+The code chunk below computes the test statistic, and p-value for Woolf's test of the null hypothesis that the ORs for having private insurance comparing males to females is the same for each level of age (< 65, [65, 69), $\ge$ 69).
+
+```{r woolf01, exercise = TRUE, exercise.setup = "prepare-sexprivage", exercise.lines = 5}
+WoolfTest(sex_priv_age_tab_rearrange)
+```
+
+The ``epi.2by2()`` function from the epiR package also provides the test statistic and p-value for Woolf's test if you include the stratified table object as the first argument of the function.  You also get a lot more information!  Run the code chunk below. 
+
+```{r woolf02, exercise = TRUE, exercise.setup = "prepare-sexprivage", exercise.lines = 5, warning = FALSE}
+epi.2by2(sex_priv_age_tab_rearrange, conf.level = 0.95)
+```
+
+The line at the bottom of the output that reads:
+
+``M-H test of homogeneity of ORs: chi2(2) = 3.085 Pr>chi2 = 0.21``
+
+gives information for Woolf's test.  Notice that the test statistic value and p-value are slightly different from those calculated using the ``WoolfTest()`` function.  This is because the ``epi.2by2()`` function includes a small correction for the partial table cells.  For our purposes, we can view these two sets of results as equivalent.  When you conduct Woolf's test, feel free to use either the ``WoolfTest()`` or the ``epi.2by2()`` function.  The latter may be more useful, since it provides information on other statistics related to the stratified analysis.
+
+## 4 Stratified Analysis
+
+Almost everything that you need to conduct a stratified analysis to assess effect modification or confounding is provided in the output of the ``epi.2by2()`` function when you include a stratified table as the first argument.  In this section, we will simply point out all of the information provided by the ``epi.2by2()`` function in this setting.
+
+**Example 1**.  Using the ``sex_priv_age_tab_rearrange`` table object created in Section 2, compute the crude and adjusted measures of association for the relationship between private insurance status and sex, adjusting for age (< 65, [65, 69), $\ge$ 69).
+
+The code below computes the crude and adjusted estimates as well as provides additional information for a stratified analysis.
+
+```{r, warning = FALSE}
+sex_priv_age_tab <- table(hrs_data$female_cat, hrs_data$private_cat, hrs_data$age_cat)
+sex_priv_age_tab_rearrange <- sex_priv_age_tab[,c(2,1),]
+epi.2by2(sex_priv_age_tab_rearrange, conf.level = 0.95)
+```
+
+The 2 x 2 table at the top of the output is the **pooled 2 x 2 table**, collapsed over all of the age levels.  This table is used to compute the **crude estimates** of the OR, RR, and RD.  
+
+The middle section of the output provides the crude and Mantel-Haenszel (MH) adjusted measures of association.  In addition, below the MH estimate for each measure, the ratio of the crude to adjusted values is provided.  This helps to give a sense of how different the crude and adjusted estimates are from each other.  Values close to 1 mean that the crude and adjusted estimates are not very different. 
+
+At the bottom of the output, there is information from three tests.  The row that reads:
+
+``M-H test of homogeneity of RRs`` 
+
+gives information from a test that is similar to Woolf's test, but uses the RRs to compute the test statistic rather than the ORs. The row that reads:
+
+``M-H test of homogeneity of ORs`` 
+
+gives information about Woolf's test.  And the row that reads:
+
+``Test that M-H adjusted OR = 1``
+
+gives the test statistic and p-value for the Mantel-Haenszel test of the null hypothesis that the adjusted OR = 1. 
+
+## More Practice
+
+**Use the following information for Exercises 1 - 4**.  Consider data from a *hypothetical* cohort study of whether baldness (bald, not bald) causes coronary heart disease (CHD, No CHD).  Investigators think that the relationship between baldness and CHD status may be confounded by age.  The partial tables below are stratified by age (old, young).
+
+| age = old          | CHD | No CHD |  
+|:---------:|:---:|:-------:|   
+| bald       |55   | 51      |  
+| not bald |5   | 5      |
+
+| age = young          | CHD | No CHD |  
+|:---------:|:---:|:-------:|   
+| bald       |24   | 694      |  
+| not bald |281   | 8285      |
+
+**Exercise 1.** Create a stratified table object using these data.
+
+```{r ex1, exercise = TRUE, exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex1-solution}
+age_var <- c("old", "old", "old", "old", "young", "young", "young", "young")
+chd_var <- c("CHD", "CHD", "no CHD", "no CHD", "CHD", "CHD", "no CHD", "no CHD")
+bald_var <- c("bald", "not bald", "bald", "not bald", "bald", "not bald", "bald", "not bald")
+freq_var <- c(55, 5, 51, 5, 24, 281, 694, 8285)
+bald_chd_data <- tibble(age_var, chd_var, bald_var, freq_var)
+bald_chd_age_tab <- xtabs(freq_var ~ bald_var + chd_var + age_var, data = bald_chd_data)
+```
+
+```{r prepare-ex01}
+age_var <- c("old", "old", "old", "old", "young", "young", "young", "young")
+chd_var <- c("CHD", "CHD", "no CHD", "no CHD", "CHD", "CHD", "no CHD", "no CHD")
+bald_var <- c("bald", "not bald", "bald", "not bald", "bald", "not bald", "bald", "not bald")
+freq_var <- c(55, 5, 51, 5, 24, 281, 694, 8285)
+bald_chd_data <- tibble(age_var, chd_var, bald_var, freq_var)
+bald_chd_age_tab <- xtabs(freq_var ~ bald_var + chd_var + age_var, data = bald_chd_data)
+```
+
+**Exercise 2.** Using the table object from the solution to Exercise 1, compute the measures of association between baldness and CHD among young subjects.
+
+```{r ex2, exercise = TRUE, exercise.setup = "prepare-ex01", exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex2-solution}
+epi.2by2(bald_chd_age_tab[,,age_var = "young"], conf.level = 0.95)
+```
+
+**Exercise 3.** Using the table object from the solution to Exercise 1, compute the measures of association between baldness and CHD among old subjects.
+
+```{r ex3, exercise = TRUE, exercise.lines = 7, exercise.setup = "prepare-ex01", message = FALSE}
+
+```
+
+```{r ex3-solution}
+epi.2by2(bald_chd_age_tab[,,age_var = "old"], conf.level = 0.95)
+```
+
+**Exercise 4.** Using the table object from the solution to Exercise 1, compute the crude and adjusted measures of association between baldness and CHD, adjusting for age (old, young).
+
+```{r ex4, exercise = TRUE, exercise.setup = "prepare-ex01", exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex4-solution}
+epi.2by2(bald_chd_age_tab, conf.level = 0.95)
+```
+
+
+**Use the following information for Exercises 5 - 8**  The tibble ``endo_data`` contains hypothetical data (with one observation per row) on postmenopausal women aged 50–64 and includes information on hormone replacement therapy (HRT).  The data set contains the following variables: 
+
+|Variable           |Levels                    |
+|:-----------------:|:------------------------:|   
+| ``HRT``       |cont_comb = continuous/combined HRT, never = never used HRT |  
+| ``cancer``    |1 = enodmetiral cancer, 0 = no cancer |
+| ``BMI``       |BMI < 25, BMI 25-29, BMI >= 30  |
+
+Suppose that investigators are interested in understanding the association between HRT use and development of endometrial cancer.  The exposure variable, HRT use, has two levels: continuous, combined HRT use (with progestogen and estrogen) and never use.  Investigators thought it might be important to stratify by BMI (< 25 kg/m$^2$, 25 - 29 kg/m$^2$, $\ge$ 30 kg/m$^2$).
+
+
+**Exercise 5.**  Create a stratified table object with partial tables that cross classify HRT use and cancer status, stratifying by BMI.  
+
+```{r ex5, exercise = TRUE, exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex5-solution}
+endo_part_tabs <- table(endo_data$HRT, endo_data$cancer, endo_data$BMI)
+endo_part_tabs
+```
+
+```{r prepare-ex05}
+endo_part_tabs <- table(endo_data$HRT, endo_data$cancer, endo_data$BMI)
+```
+
+**Exercise 6.**  Rearrange the stratified table object from the solution to Exercise 5 so that 1 = enodmetiral cancer is in the first column of each partial table and so that the tables are listed from lowest to highest BMI category.
+
+```{r ex6, exercise = TRUE, exercise.setup = "prepare-ex05", exercise.lines = 3, message = FALSE}
+
+```
+
+```{r ex6-solution}
+endo_part_tabs_rearrange <- endo_part_tabs[,c(2,1),c(1,3,2)]
+endo_part_tabs_rearrange
+```
+
+```{r prepare-ex05a}
+endo_part_tabs_rearrange <- endo_part_tabs[,c(2,1),c(1,3,2)]
+```
+
+**Exercise 7.** Using the table object from the solution to Exercise 6, compute the measures of association between HRT use and cancer among women with BMI < 25.
+
+```{r ex7, exercise = TRUE, exercise.setup = "prepare-ex05a", exercise.lines = 7, message = FALSE}
+
+```
+
+```{r ex7-solution}
+epi.2by2(endo_part_tabs_rearrange[,,BMI = "BMI < 25"] , conf.level = 0.95)
+```
+
+**Exercise 8.** Using the table object from the solution to Exercise 6, compute the crude and adjusted measures of association between HRT use and cancer, adjusting for BMI.
+
+```{r ex8, exercise = TRUE, exercise.setup = "prepare-ex05a", exercise.lines = 7, warning = FALSE}
+
+```
+
+```{r ex8-solution}
+epi.2by2(endo_part_tabs_rearrange, conf.level = 0.95)
+```
